@@ -78,10 +78,9 @@ nymeria_plus_motion/
 ├── configs/                  # Yaml configuration files
 │   ├── default.yaml          # Master configuration with default hyperparameters
 │   └── overfit_test.yaml     # Fast single-batch overfit test configuration
-├── demo/                     # Visualizer and interactive demo tools
+├── demo/                     # Interactive demo tool
 │   ├── demo.py               # Real-time interactive rollout visualizer
-│   ├── offline.py            # Offline saved motion renderer
-│   └── scenes.py             # 3D scene geometry loader and helper utilities
+│   └── scenes.py             # Empty-scene occupancy grid and skeleton helpers
 ├── docs/                     # Detailed technical and dataset documentation
 │   ├── ARCHITECTURE.md       # Neural network architecture & mathematical formulation
 │   ├── DATASET.md            # Dataset specification and array layout
@@ -92,7 +91,6 @@ nymeria_plus_motion/
     ├── cache.py              # Text feature pre-caching script
     ├── config.py             # Configuration loader, defaults, and builder functions
     ├── inference.py          # Auto-regressive rollout state & generation engine
-    ├── test.py               # Validation sampling script
     ├── train.py              # Model training script
     ├── datasets/             # Dataset implementations
     │   └── nymeriaplus/      # Nymeria Plus loader, preprocessing & splits
@@ -132,23 +130,14 @@ python -m src.train --config configs/default.yaml --name my_experiment --workers
 
 Checkpoint files and TensorBoard logs will be written to `runs/my_experiment/`.
 
-### Step 3: Generate Validation Motion Windows
+### Step 3: Inspect Generated Motion
 
-Generate motion samples from validation ground-truth windows for visual inspection:
+Run the interactive browser demo against a trained checkpoint:
 
 ```bash
-python -m src.test \
+python -m demo.demo \
   --config runs/my_experiment/config.yaml \
-  --checkpoint runs/my_experiment/checkpoints/my_experiment_epoch300.pth \
-  --count 8
-```
-
-### Step 4: Render & Inspect Generated Motion
-
-Render saved `.npz` files with the offline viewer:
-
-```bash
-python -m demo.offline --input validation/sequence_000000.npz
+  --checkpoint runs/my_experiment/checkpoints/my_experiment_epoch300.pth
 ```
 
 ---
@@ -162,5 +151,4 @@ python -m demo.offline --input validation/sequence_000000.npz
 | **Run Overfit Test** | `python -m src.train --config configs/overfit_test.yaml --name overfit_run` |
 | **Start Full Training** | `python -m src.train --config configs/default.yaml --name main_run --workers 4` |
 | **Resume Training** | `python -m src.train --config configs/default.yaml --name main_run --resume-checkpoint runs/main_run/checkpoints/main_run_epoch050.pth` |
-| **Generate Samples** | `python -m src.test --config configs/default.yaml --checkpoint runs/main_run/checkpoints/main_run_epoch300.pth` |
-| **Render Motion Demo** | `python -m demo.offline --input validation/sample_000.npz` |
+| **Run Interactive Demo** | `python -m demo.demo --config runs/main_run/config.yaml --checkpoint runs/main_run/checkpoints/main_run_epoch300.pth` |

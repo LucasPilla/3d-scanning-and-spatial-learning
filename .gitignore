@@ -11,6 +11,3 @@ runs/
 
 # Scratch visualizers and the pages they render.
 tmp/
-
-# Demo viewers are still under test.
-demo/

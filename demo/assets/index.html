@@ -1,0 +1,986 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Motion generation demo</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #1c2024;
+      --muted: #6b7580;
+      --faint: #98a1a8;
+      --line: #e2e5e8;
+      --panel: #fffffff5;
+      --surface: #f6f7f8;
+      --button: #f1f3f4;
+      --accent: #e8663f;
+      --accent-ink: #ffffff;
+      --skeleton: #57cdb0;
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      background: #fff;
+      color: var(--ink);
+      font: 14px/1.4 -apple-system, "Segoe UI", system-ui, sans-serif;
+    }
+    canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+    #hint {
+      position: fixed;
+      top: 18px;
+      left: 340px;
+      color: var(--faint);
+      font-size: 12.5px;
+      pointer-events: none;
+    }
+    #panel {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      width: 312px;
+      max-height: calc(100% - 32px);
+      overflow: auto;
+      padding: 18px;
+      background: var(--panel);
+      backdrop-filter: blur(6px);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: 0 12px 32px #1c202414;
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    h1 .link {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      user-select: none;
+    }
+    h1 .link:hover:not(.disabled) { color: var(--ink); }
+    h1 .link.disabled { color: var(--faint); cursor: default; }
+    h2 {
+      margin: 0 0 10px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+    }
+    section.block {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+    }
+    section.block:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+    label { display: block; margin: 12px 0 6px; font-weight: 600; font-size: 13px; }
+    label:first-child { margin-top: 0; }
+    textarea, input {
+      display: block;
+      width: 100%;
+      color: inherit;
+      background: #fff;
+      border: 1px solid #d3d8db;
+      border-radius: 8px;
+      font: inherit;
+    }
+    textarea { min-height: 60px; resize: vertical; padding: 9px 10px; }
+    input { height: 34px; padding: 0 10px; }
+    textarea:disabled, input:disabled { opacity: .5; }
+    textarea:focus, input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px #e8663f22;
+    }
+    .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0 8px; margin-top: 14px; }
+    #windows {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .window-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 8px 8px 4px;
+      background: var(--surface);
+      border: 1px solid transparent;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background .1s, border-color .1s;
+    }
+    .window-row:hover { background: #eef0f1; }
+    .window-row.selected {
+      background: #e8663f14;
+      border-color: #e8663f55;
+    }
+    .window-row.dragging { opacity: .35; }
+    .window-placeholder {
+      height: 40px;
+      border: 1.5px dashed var(--accent);
+      border-radius: 10px;
+      background: #e8663f0f;
+    }
+    .drag-handle {
+      flex: none;
+      width: 18px;
+      text-align: center;
+      color: var(--faint);
+      cursor: grab;
+      font-size: 14px;
+      line-height: 1;
+      user-select: none;
+      touch-action: none;
+    }
+    .drag-handle:active { cursor: grabbing; }
+    .window-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .window-title {
+      font-size: 13px;
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .window-meta {
+      font-size: 11.5px;
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .window-remove {
+      flex: none;
+      height: 24px;
+      width: 24px;
+      padding: 0;
+      line-height: 1;
+      border: none;
+      background: transparent;
+      color: var(--faint);
+      font-size: 15px;
+    }
+    .window-remove:hover { color: #a52b20; background: #a52b2014; }
+    #add-window {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 9px 8px;
+      margin-top: 6px;
+      color: var(--muted);
+      background: transparent;
+      border: 1.5px dashed #cfd4d7;
+      border-radius: 10px;
+      font: inherit;
+      font-weight: 600;
+      font-size: 12.5px;
+      cursor: pointer;
+      width: 100%;
+    }
+    #add-window:hover { color: var(--ink); border-color: var(--faint); background: var(--surface); }
+    #windows-empty {
+      padding: 14px 10px;
+      color: var(--muted);
+      font-size: 12.5px;
+      background: var(--surface);
+      border-radius: 10px;
+      text-align: center;
+    }
+    button {
+      height: 34px;
+      padding: 0 12px;
+      color: inherit;
+      background: var(--button);
+      border: 1px solid #d3d8db;
+      border-radius: 8px;
+      font: inherit;
+      cursor: pointer;
+    }
+    button:hover:not(:disabled) { background: #e8ebed; }
+    button:disabled { cursor: default; opacity: .5; }
+    #generate {
+      display: block;
+      width: 100%;
+      height: 44px;
+      margin-top: 4px;
+      background: var(--accent);
+      border: none;
+      color: var(--accent-ink);
+      font-weight: 700;
+      font-size: 14px;
+      border-radius: 10px;
+      box-shadow: 0 6px 16px #e8663f38;
+    }
+    #generate:hover:not(:disabled) { background: #d85a35; }
+    #generate:disabled { background: #e8663f88; box-shadow: none; opacity: 1; }
+    #readout {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 5px 10px;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 12.5px;
+    }
+    #state { color: var(--ink); font-weight: 650; }
+    #error { min-height: 18px; margin-top: 8px; color: #a52b20; font-size: 12.5px; }
+    @media (max-width: 700px) {
+      #panel { width: calc(100% - 32px); max-height: 52%; }
+      #hint { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div id="hint">Drag to orbit · Scroll to zoom</div>
+  <section id="panel">
+    <section class="block">
+      <h1>Windows <span class="link" id="clear-windows">Clear all</span></h1>
+      <div id="windows"></div>
+      <button id="add-window" type="button">+ Add window</button>
+    </section>
+
+    <section class="block">
+      <h2 id="editor-title">New window</h2>
+      <label for="prompt">Motion prompt</label>
+      <textarea id="prompt" maxlength="2000" placeholder="The person walks."></textarea>
+      <div class="grid">
+        <div>
+          <label for="scene-cfg">Scene CFG</label>
+          <input id="scene-cfg" type="number" min="0" max="10" step="0.5" value="3">
+        </div>
+        <div>
+          <label for="text-cfg">Text CFG</label>
+          <input id="text-cfg" type="number" min="0" max="10" step="0.5" value="3">
+        </div>
+        <div>
+          <label for="goal-cfg">Goal CFG</label>
+          <input id="goal-cfg" type="number" min="0" max="10" step="0.5" value="3">
+        </div>
+      </div>
+    </section>
+
+    <section class="block">
+      <button id="generate" type="button">Generate motion</button>
+      <div id="readout">
+        <span>Playback</span><span id="state">Ready</span>
+        <span>Generation</span><span id="latency">—</span>
+      </div>
+      <div id="error" role="status" aria-live="polite"></div>
+    </section>
+  </section>
+  <script id="settings" type="application/json">__SETTINGS__</script>
+  <script>
+    "use strict";
+    const settings = JSON.parse(document.getElementById("settings").textContent);
+    const canvas = document.getElementById("canvas");
+    const context = canvas.getContext("2d");
+    const promptInput = document.getElementById("prompt");
+    const textCfgInput = document.getElementById("text-cfg");
+    const goalCfgInput = document.getElementById("goal-cfg");
+    const sceneCfgInput = document.getElementById("scene-cfg");
+    const editorTitle = document.getElementById("editor-title");
+    const windowList = document.getElementById("windows");
+    const addWindowButton = document.getElementById("add-window");
+    const clearWindowsLink = document.getElementById("clear-windows");
+    const generateButton = document.getElementById("generate");
+    const stateLabel = document.getElementById("state");
+    const latencyLabel = document.getElementById("latency");
+    const errorLabel = document.getElementById("error");
+
+    const GRID_SPACING = 1;
+    const GRID_EXTENT = 7;
+    let windows = [];
+    let nextWindowId = 1;
+    let selectedWindowId = null;
+    // List reordering is driven by our own pointer tracking rather than native
+    // HTML5 drag-and-drop: rebuilding the row DOM mid-drag (needed to show the
+    // placeholder) destroys the dragged element, which breaks a native drag
+    // session. Pointer events have no such session to break.
+    let listDragSourceIndex = null;
+    let listDragOverIndex = null;
+    let suppressRowClick = false;
+    let motion = [];
+    let currentFrame = 0;
+    let pending = null;
+    let revision = 0;
+    let paused = false;
+    let generating = false;
+    let generationProgress = "";
+    let motionDirty = true;
+    let lastFrameTime = performance.now();
+    let yaw = -0.7;
+    let pitch = 0.35;
+    let zoom = 1;
+    let center = [settings.start[0], settings.start[1], 0.65];
+    // The model's local z is already height above the floor, so the floor
+    // sits at a fixed z=0 in world space; no runtime calibration needed.
+    const floorZ = 0;
+    const radius = 2.2;
+    let dragging = false;
+    let windowDrag = null;
+    let pointer = [0, 0];
+    let pointerStart = [0, 0];
+
+    promptInput.disabled = !settings.textEnabled;
+    if (!settings.textEnabled) {
+      promptInput.placeholder = "Text conditioning is disabled in this model";
+      textCfgInput.disabled = true;
+    }
+    sceneCfgInput.disabled = !settings.sceneEnabled;
+
+    function finiteNumber(input, fallback, minimum, maximum) {
+      const value = Number(input.value);
+      if (!Number.isFinite(value)) return fallback;
+      return Math.min(maximum, Math.max(minimum, value));
+    }
+
+    function markDirty() {
+      motionDirty = true;
+      updateGenerateButton();
+    }
+
+    function selectedWindow() {
+      return windows.find(item => item.id === selectedWindowId) || null;
+    }
+
+    function selectWindow(id) {
+      selectedWindowId = id;
+      const item = selectedWindow();
+      if (item) {
+        promptInput.value = item.prompt;
+        textCfgInput.value = item.textGuidance;
+        goalCfgInput.value = item.goalGuidance;
+        sceneCfgInput.value = item.sceneGuidance;
+      }
+      updateWindowPanel();
+    }
+
+    function newWindowDefaults() {
+      return {
+        prompt: settings.textEnabled ? promptInput.value : "",
+        textGuidance: finiteNumber(textCfgInput, 3, 0, 10),
+        goalGuidance: finiteNumber(goalCfgInput, 3, 0, 10),
+        sceneGuidance: settings.sceneEnabled ? finiteNumber(sceneCfgInput, 3, 0, 10) : 0,
+      };
+    }
+
+    function addWindow() {
+      const item = Object.assign({id: nextWindowId++, target: null}, newWindowDefaults());
+      windows.push(item);
+      selectWindow(item.id);
+      markDirty();
+    }
+
+    function removeWindow(id) {
+      windows = windows.filter(item => item.id !== id);
+      if (selectedWindowId === id) selectedWindowId = null;
+      updateWindowPanel();
+      markDirty();
+    }
+
+    function windowSummary(item) {
+      const where = item.target
+        ? "(" + item.target[0].toFixed(2) + ", " + item.target[1].toFixed(2) + ")"
+        : "no waypoint";
+      const scene = settings.sceneEnabled && item.sceneGuidance <= 0 ? " · scene off" : "";
+      return where + scene;
+    }
+
+    function reorderList(from, insertAt) {
+      if (from === null || insertAt === null || from === insertAt) return;
+      const [moved] = windows.splice(from, 1);
+      windows.splice(insertAt > from ? insertAt - 1 : insertAt, 0, moved);
+      updateWindowPanel();
+      markDirty();
+    }
+
+    function updateWindowPanel() {
+      windowList.innerHTML = "";
+      if (!windows.length) {
+        const empty = document.createElement("div");
+        empty.id = "windows-empty";
+        empty.textContent = "No windows yet.";
+        windowList.appendChild(empty);
+      }
+
+      function appendPlaceholder() {
+        const placeholder = document.createElement("div");
+        placeholder.className = "window-placeholder";
+        windowList.appendChild(placeholder);
+      }
+
+      windows.forEach((item, index) => {
+        if (listDragSourceIndex !== null && listDragOverIndex === index) appendPlaceholder();
+
+        const row = document.createElement("div");
+        row.className = "window-row" +
+          (item.id === selectedWindowId ? " selected" : "") +
+          (index === listDragSourceIndex ? " dragging" : "");
+
+        const handle = document.createElement("span");
+        handle.className = "drag-handle";
+        handle.textContent = "⠿";
+        handle.addEventListener("pointerdown", event => {
+          if (event.button !== 0) return;
+          event.preventDefault();
+          event.stopPropagation();
+          listDragSourceIndex = index;
+          listDragOverIndex = index;
+          updateWindowPanel();
+        });
+        row.appendChild(handle);
+
+        const info = document.createElement("div");
+        info.className = "window-info";
+        const title = document.createElement("div");
+        title.className = "window-title";
+        title.textContent = (index + 1) + ". " + (item.prompt || "(no prompt)");
+        const meta = document.createElement("div");
+        meta.className = "window-meta";
+        meta.textContent = windowSummary(item);
+        info.appendChild(title);
+        info.appendChild(meta);
+        row.appendChild(info);
+
+        const removeButton = document.createElement("button");
+        removeButton.type = "button";
+        removeButton.className = "window-remove";
+        removeButton.textContent = "×";
+        removeButton.onclick = event => {
+          event.stopPropagation();
+          removeWindow(item.id);
+        };
+        row.appendChild(removeButton);
+
+        row.onclick = () => {
+          if (suppressRowClick) return;
+          selectWindow(item.id);
+        };
+        windowList.appendChild(row);
+      });
+      if (listDragSourceIndex !== null && listDragOverIndex === windows.length) appendPlaceholder();
+      editorTitle.textContent = selectedWindowId
+        ? "Window " + (windows.findIndex(w => w.id === selectedWindowId) + 1)
+        : "New window";
+    }
+
+    // Pointer-driven list reordering: measure row rects directly rather than
+    // hit-testing via elementFromPoint. The placeholder div inserted below is
+    // not a .window-row, so once the cursor sits over it a hit-test-based
+    // approach loses the row underneath and falls back incorrectly; comparing
+    // cursor Y against every row's own rect has no such gap.
+    addEventListener("pointermove", event => {
+      if (listDragSourceIndex === null) return;
+      const rows = Array.from(windowList.querySelectorAll(".window-row"));
+      let insertAt = rows.length;
+      for (let i = 0; i < rows.length; i += 1) {
+        const rect = rows[i].getBoundingClientRect();
+        if (event.clientY < rect.top + rect.height / 2) {
+          insertAt = i;
+          break;
+        }
+      }
+      if (insertAt !== listDragOverIndex) {
+        listDragOverIndex = insertAt;
+        updateWindowPanel();
+      }
+    });
+    addEventListener("pointerup", () => {
+      if (listDragSourceIndex === null) return;
+      const from = listDragSourceIndex;
+      const to = listDragOverIndex;
+      listDragSourceIndex = null;
+      listDragOverIndex = null;
+      reorderList(from, to);
+      suppressRowClick = true;
+      setTimeout(() => { suppressRowClick = false; }, 0);
+    });
+
+    function updateGenerateButton() {
+      if (generating) {
+        generateButton.disabled = true;
+        generateButton.textContent = generationProgress || "Generating…";
+        return;
+      }
+      generateButton.disabled = false;
+      generateButton.textContent = (motion.length && !motionDirty) ? "Replay" : "Generate motion";
+    }
+
+    function updateReadout() {
+      if (generating) stateLabel.textContent = generationProgress;
+      else if (!motion.length) stateLabel.textContent = "Ready";
+      else if (paused && currentFrame === motion.length - 1) stateLabel.textContent = "Finished";
+      else if (paused) stateLabel.textContent = "Paused";
+      else stateLabel.textContent = "Playing";
+      updateGenerateButton();
+    }
+
+    function scale() {
+      return Math.min(innerWidth, Math.max(240, innerHeight)) * 0.42 * zoom / radius;
+    }
+
+    function project(point) {
+      const x = point[0] - center[0];
+      const y = point[1] - center[1];
+      const z = point[2] - center[2];
+      const side = Math.cos(yaw) * x - Math.sin(yaw) * y;
+      const depth = Math.sin(yaw) * x + Math.cos(yaw) * y;
+      const up = Math.cos(pitch) * z - Math.sin(pitch) * depth;
+      const distance = radius * 4;
+      const perspective = distance / (
+        distance + Math.sin(pitch) * z + Math.cos(pitch) * depth
+      );
+      return [
+        innerWidth / 2 + side * scale() * perspective,
+        innerHeight / 2 - up * scale() * perspective,
+        perspective,
+      ];
+    }
+
+    function screenToFloor(screenX, screenY, planeZ = floorZ) {
+      const distance = radius * 4;
+      const factor = scale();
+      const horizontal = (screenX - innerWidth / 2) / (factor * distance);
+      const vertical = (innerHeight / 2 - screenY) / (factor * distance);
+      const sinPitch = Math.sin(pitch);
+      const cosPitch = Math.cos(pitch);
+      const denominator = cosPitch * vertical + sinPitch;
+      if (Math.abs(denominator) < 1e-6) return null;
+      const relativeFloor = planeZ - center[2];
+      const lambda = (relativeFloor + sinPitch * distance) / denominator;
+      if (!Number.isFinite(lambda) || lambda <= 0) return null;
+      const side = horizontal * lambda;
+      const up = vertical * lambda;
+      const depth = -sinPitch * up + cosPitch * (lambda - distance);
+      return [
+        center[0] + Math.cos(yaw) * side + Math.sin(yaw) * depth,
+        center[1] - Math.sin(yaw) * side + Math.cos(yaw) * depth,
+      ];
+    }
+
+    function currentJoints() {
+      return motion.length ? motion[currentFrame] : null;
+    }
+
+    function drawMarker(point, color, label, size = 7) {
+      const [x, y] = project(point);
+      context.fillStyle = color;
+      context.beginPath();
+      context.arc(x, y, size, 0, 2 * Math.PI);
+      context.fill();
+      if (label) {
+        context.fillStyle = "#202529";
+        context.font = "600 12px system-ui";
+        context.fillText(label, x + 10, y - 8);
+      }
+    }
+
+    function drawGhostMarker(point) {
+      const [x, y] = project(point);
+      context.save();
+      context.setLineDash([3, 3]);
+      context.lineWidth = 1.5;
+      context.strokeStyle = "#98a1a8";
+      context.beginPath();
+      context.arc(x, y, 7, 0, 2 * Math.PI);
+      context.stroke();
+      context.restore();
+    }
+
+    function drawPlaceholderMarker(point, label) {
+      const [x, y] = project(point);
+      context.save();
+      context.setLineDash([4, 3]);
+      context.lineWidth = 2;
+      context.strokeStyle = "#f0a329";
+      context.fillStyle = "#f0a32933";
+      context.beginPath();
+      context.arc(x, y, 10, 0, 2 * Math.PI);
+      context.fill();
+      context.stroke();
+      context.restore();
+      context.fillStyle = "#202529";
+      context.font = "600 12px system-ui";
+      const text = label + "  (" + point[0].toFixed(2) + ", " + point[1].toFixed(2) + ")";
+      context.fillText(text, x + 14, y - 8);
+    }
+
+    function clampToLimit(value) {
+      const limit = settings.waypointLimit;
+      return Math.max(-limit, Math.min(limit, value));
+    }
+
+    function hitTestWindowTarget(screenX, screenY) {
+      let closest = null;
+      let closestDistance = 16;
+      windows.forEach(item => {
+        if (!item.target) return;
+        const [x, y] = project([item.target[0], item.target[1], floorZ]);
+        const distance = Math.hypot(x - screenX, y - screenY);
+        if (distance <= closestDistance) {
+          closest = item;
+          closestDistance = distance;
+        }
+      });
+      return closest;
+    }
+
+    function draw() {
+      const ratio = devicePixelRatio || 1;
+      canvas.width = innerWidth * ratio;
+      canvas.height = innerHeight * ratio;
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      context.clearRect(0, 0, innerWidth, innerHeight);
+
+      const minimumX = Math.floor((center[0] - GRID_EXTENT) / GRID_SPACING) * GRID_SPACING;
+      const maximumX = Math.ceil((center[0] + GRID_EXTENT) / GRID_SPACING) * GRID_SPACING;
+      const minimumY = Math.floor((center[1] - GRID_EXTENT) / GRID_SPACING) * GRID_SPACING;
+      const maximumY = Math.ceil((center[1] + GRID_EXTENT) / GRID_SPACING) * GRID_SPACING;
+      context.strokeStyle = "#dce1e4";
+      context.lineWidth = 1;
+      context.beginPath();
+      for (let x = minimumX; x <= maximumX; x += GRID_SPACING) {
+        const [x1, y1] = project([x, minimumY, floorZ]);
+        const [x2, y2] = project([x, maximumY, floorZ]);
+        context.moveTo(x1, y1);
+        context.lineTo(x2, y2);
+      }
+      for (let y = minimumY; y <= maximumY; y += GRID_SPACING) {
+        const [x1, y1] = project([minimumX, y, floorZ]);
+        const [x2, y2] = project([maximumX, y, floorZ]);
+        context.moveTo(x1, y1);
+        context.lineTo(x2, y2);
+      }
+      context.stroke();
+
+      const joints = currentJoints();
+      const withTargets = windows
+        .map((item, index) => ({item, index}))
+        .filter(entry => entry.item.target);
+      if (withTargets.length) {
+        context.strokeStyle = "#e86f51aa";
+        context.lineWidth = 2;
+        context.setLineDash([6, 4]);
+        context.beginPath();
+        const [startX, startY] = project([settings.start[0], settings.start[1], floorZ]);
+        context.moveTo(startX, startY);
+        withTargets.forEach(({item}) => {
+          const [x, y] = project([item.target[0], item.target[1], floorZ]);
+          context.lineTo(x, y);
+        });
+        context.stroke();
+        context.setLineDash([]);
+        withTargets.forEach(({item, index}) => {
+          if (windowDrag && item.id === windowDrag.item.id) {
+            drawGhostMarker([windowDrag.origin[0], windowDrag.origin[1], floorZ]);
+            drawPlaceholderMarker([item.target[0], item.target[1], floorZ], String(index + 1));
+            return;
+          }
+          drawMarker(
+            [item.target[0], item.target[1], floorZ],
+            item.id === selectedWindowId ? "#f0a329" : "#e86f51",
+            String(index + 1),
+            item.id === selectedWindowId ? 9 : 7,
+          );
+        });
+      }
+
+      if (joints) {
+        context.strokeStyle = "#63d5b8";
+        context.lineWidth = 3;
+        context.beginPath();
+        settings.parents.forEach((parent, joint) => {
+          if (parent < 0) return;
+          const [x1, y1] = project(joints[parent]);
+          const [x2, y2] = project(joints[joint]);
+          context.moveTo(x1, y1);
+          context.lineTo(x2, y2);
+        });
+        context.stroke();
+        context.fillStyle = "#202529";
+        joints.map(joint => project(joint)).sort((a, b) => a[2] - b[2])
+          .forEach(([x, y, depth]) => {
+            context.beginPath();
+            context.arc(x, y, Math.max(2, 4 * depth), 0, 2 * Math.PI);
+            context.fill();
+          });
+      } else {
+        drawMarker(
+          [settings.start[0], settings.start[1], floorZ],
+          "#287d69",
+          "Start",
+          6,
+        );
+      }
+    }
+
+    function responseFrames(value) {
+      if (!Array.isArray(value) || value.length !== 16) return null;
+      for (const frame of value) {
+        if (!Array.isArray(frame) || frame.length !== 24) return null;
+        for (const joint of frame) {
+          if (!Array.isArray(joint) || joint.length !== 3 ||
+              joint.some(coordinate => !Number.isFinite(coordinate))) return null;
+        }
+      }
+      return value;
+    }
+
+    function advanceFrame() {
+      if (!motion.length) return;
+      if (currentFrame + 1 < motion.length) {
+        currentFrame += 1;
+      } else {
+        paused = true;
+      }
+      updateReadout();
+    }
+
+    function animate(time) {
+      const joints = currentJoints();
+      if (joints) {
+        const follow = 1 - Math.exp(-Math.max(0, time - lastFrameTime) / 350);
+        center[0] += (joints[0][0] - center[0]) * follow;
+        center[1] += (joints[0][1] - center[1]) * follow;
+        center[2] += (joints[0][2] + 0.55 - center[2]) * follow;
+      }
+      if (!paused && motion.length) {
+        const frameDuration = 1000 / settings.fps;
+        if (time - lastFrameTime >= frameDuration) {
+          lastFrameTime += frameDuration;
+          advanceFrame();
+        }
+      } else {
+        lastFrameTime = time;
+      }
+      draw();
+      requestAnimationFrame(animate);
+    }
+
+    function controlChanged(input, fallback, minimum, maximum) {
+      const value = finiteNumber(input, fallback, minimum, maximum);
+      input.value = value;
+    }
+
+    promptInput.addEventListener("input", () => {
+      const item = selectedWindow();
+      if (item) item.prompt = promptInput.value;
+      updateWindowPanel();
+      markDirty();
+    });
+    textCfgInput.addEventListener("change", () => {
+      controlChanged(textCfgInput, 3, 0, 10);
+      const item = selectedWindow();
+      if (item) item.textGuidance = finiteNumber(textCfgInput, 3, 0, 10);
+      markDirty();
+    });
+    goalCfgInput.addEventListener("change", () => {
+      controlChanged(goalCfgInput, 3, 0, 10);
+      const item = selectedWindow();
+      if (item) item.goalGuidance = finiteNumber(goalCfgInput, 3, 0, 10);
+      markDirty();
+    });
+    sceneCfgInput.addEventListener("change", () => {
+      controlChanged(sceneCfgInput, 3, 0, 10);
+      const item = selectedWindow();
+      if (item) item.sceneGuidance = finiteNumber(sceneCfgInput, 3, 0, 10);
+      updateWindowPanel();
+      markDirty();
+    });
+
+    function resetPlayback() {
+      motion = [];
+      currentFrame = 0;
+      paused = false;
+      generationProgress = "";
+      latencyLabel.textContent = "—";
+      center[0] = settings.start[0];
+      center[1] = settings.start[1];
+      center[2] = 0.65;
+      lastFrameTime = performance.now();
+    }
+
+    async function generateMotion() {
+      revision += 1;
+      if (pending) pending.controller.abort();
+      const request = {
+        revision,
+        controller: new AbortController(),
+      };
+      pending = request;
+      resetPlayback();
+      generating = true;
+      errorLabel.textContent = "";
+      updateReadout();
+
+      const plan = windows.length
+        ? windows
+        : [Object.assign({target: null}, newWindowDefaults())];
+      const generated = [];
+      // The model consumes canonical motion features, not joint positions, so
+      // the rollout state is echoed back untouched rather than rebuilt from
+      // the rendered skeleton. A null state cold-starts the character.
+      let rolloutState = null;
+      let totalLatency = 0;
+
+      try {
+        for (let index = 0; index < plan.length; index += 1) {
+          const item = plan[index];
+          generationProgress = "Window " + (index + 1) + "/" + plan.length;
+          updateReadout();
+          const response = await fetch("/window", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            signal: request.controller.signal,
+            body: JSON.stringify({
+              state: rolloutState,
+              prompt: item.prompt,
+              target: item.target,
+              textGuidance: item.textGuidance,
+              goalGuidance: item.goalGuidance,
+              sceneGuidance: settings.sceneEnabled ? item.sceneGuidance : 0,
+              windowIndex: index,
+            }),
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error || "Generation failed");
+          const frames = responseFrames(result.frames);
+          if (!frames || result.windowIndex !== index || !result.state) {
+            throw new Error("The server returned an invalid motion window.");
+          }
+          if (pending !== request || request.revision !== revision) return;
+          generated.push(...frames);
+          rolloutState = result.state;
+          totalLatency += Number(result.latencyMs) || 0;
+        }
+
+        if (pending !== request || request.revision !== revision) return;
+        motion = generated;
+        pending = null;
+        generating = false;
+        motionDirty = false;
+        currentFrame = 0;
+        paused = false;
+        latencyLabel.textContent = Math.round(totalLatency) + " ms";
+        lastFrameTime = performance.now();
+      } catch (error) {
+        if (pending === request) pending = null;
+        if (error.name === "AbortError" || request.revision !== revision) return;
+        generating = false;
+        errorLabel.textContent = error.message;
+      }
+      updateReadout();
+    }
+
+    addWindowButton.onclick = addWindow;
+    clearWindowsLink.onclick = () => {
+      if (!windows.length) return;
+      windows = [];
+      selectedWindowId = null;
+      updateWindowPanel();
+      markDirty();
+    };
+    generateButton.onclick = () => {
+      if (generating) return;
+      if (motion.length && !motionDirty) {
+        // Replay: restart playback without contacting the server.
+        currentFrame = 0;
+        paused = false;
+        lastFrameTime = performance.now();
+        updateReadout();
+        return;
+      }
+      generateMotion();
+    };
+
+    canvas.onpointerdown = event => {
+      if (event.button !== 0) return;
+      pointer = [event.clientX, event.clientY];
+      pointerStart = [...pointer];
+      canvas.setPointerCapture(event.pointerId);
+      const hit = hitTestWindowTarget(event.clientX, event.clientY);
+      if (hit) {
+        selectWindow(hit.id);
+        const point = screenToFloor(event.clientX, event.clientY);
+        windowDrag = {
+          item: hit,
+          offset: point ? [hit.target[0] - point[0], hit.target[1] - point[1]] : [0, 0],
+          origin: [hit.target[0], hit.target[1]],
+        };
+        return;
+      }
+      dragging = true;
+    };
+    canvas.onpointermove = event => {
+      if (windowDrag) {
+        const point = screenToFloor(event.clientX, event.clientY);
+        if (point) {
+          windowDrag.item.target = [
+            clampToLimit(point[0] + windowDrag.offset[0]),
+            clampToLimit(point[1] + windowDrag.offset[1]),
+          ];
+          updateWindowPanel();
+          markDirty();
+        }
+        return;
+      }
+      if (!dragging) return;
+      const dx = event.clientX - pointer[0];
+      const dy = event.clientY - pointer[1];
+      if (Math.hypot(event.clientX - pointerStart[0], event.clientY - pointerStart[1]) > 4) {
+        yaw += dx * 0.008;
+        pitch = Math.max(-1.35, Math.min(1.35, pitch + dy * 0.008));
+      }
+      pointer = [event.clientX, event.clientY];
+    };
+    canvas.onpointerup = event => {
+      if (windowDrag) {
+        windowDrag = null;
+        return;
+      }
+      if (!dragging) return;
+      dragging = false;
+      if (Math.hypot(event.clientX - pointerStart[0], event.clientY - pointerStart[1]) <= 4) {
+        const item = selectedWindow();
+        if (item) {
+          const point = screenToFloor(event.clientX, event.clientY);
+          if (point) {
+            item.target = [clampToLimit(point[0]), clampToLimit(point[1])];
+            updateWindowPanel();
+            markDirty();
+          }
+        }
+      }
+    };
+    canvas.onpointercancel = () => {
+      dragging = false;
+      windowDrag = null;
+    };
+    canvas.onwheel = event => {
+      event.preventDefault();
+      zoom = Math.max(0.25, Math.min(4, zoom * Math.exp(-event.deltaY * 0.001)));
+    };
+    addEventListener("resize", draw);
+
+    updateWindowPanel();
+    updateReadout();
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>

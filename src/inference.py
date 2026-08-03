@@ -125,11 +125,11 @@ def inference(
         goal_tensor = torch.as_tensor(goal, device=device, dtype=torch.float32).reshape(1, 3)
         goal_condition = statistics.normalize_goal(goal_tensor)
 
-    # Crop the world occupancy grid around the same motion anchor.
+    # Crop the world occupancy grid around the same motion anchor. A caller may
+    # pass scene=None to disable scene conditioning for this window even on a
+    # scene-enabled model, e.g. to generate a text/goal-only window.
     scene_condition = None
-    if model.scene_enabled:
-        if scene is None or scene_bounds is None:
-            raise ValueError("Scene-enabled models require scene and scene bounds.")
+    if model.scene_enabled and scene is not None and scene_bounds is not None:
         scene_condition = crop_scene(
             scene,
             scene_bounds,
