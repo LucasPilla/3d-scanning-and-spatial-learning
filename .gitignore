@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+
+data/nymeriaplus/sequences/
+data/nymeriaplus/cache/
+runs/
+
+# Scratch visualizers and the pages they render.
+tmp/
+
+# Demo viewers are still under test.
+demo/

@@ -1,0 +1,79 @@
+# A runnable configuration that spells out every key, so this file doubles as
+# the reference for what each one does. Other files only need the keys they
+# change; anything they omit falls back to src/config.py::load_config, whose
+# built-in values match this file except for `path` (no default) and
+# `text_cache` (off, since a fresh checkout has no cache yet). Relative paths
+# resolve against the working directory.
+
+# Dataset
+path: data/nymeriaplus
+fps: 10.0
+window_size: 16
+history_size: 32
+max_open_sequences: 8
+
+# Diffusion
+timesteps: 50
+
+# Transformer. Each layer runs self-attention over the motion tokens (history
+# plus noisy future), then one cross-attention branch per enabled condition.
+# 148 = root delta (dx, dy, dz, dyaw) + root residual 6D + 23 body joints x 6D
+input_dim: 148
+output_dim: 148
+model_dim: 512
+ff_size: 1024
+heads: 4
+layers: 8
+dropout: 0.1
+
+# Text. The prompt is kept as a sequence of frozen per-token embeddings that
+# the motion tokens cross-attend into, so individual phrases can line up with
+# individual phases of the window. Prompts are padded or truncated to
+# max_text_tokens; annotations average ~47 tokens. CLIP cannot exceed 77, while
+# bert (DistilBERT, what MDM's DiP uses) and t5 have room to spare.
+# The cache stores every token, so it is max_text_tokens times larger than a
+# pooled one — regenerate it whenever max_text_tokens or text_encoder changes.
+text_enabled: true
+text_dropout: 0.1
+text_encoder: t5  # 'clip', 'bert', or 't5', see src/models/text_encoder.py
+text_cache: true
+max_text_tokens: 64
+
+# Scene. The encoder emits one token per cell of its final feature volume
+# (8 for the 'cnn' backbone at 32 voxels, 17 patches for 'vit'), so different
+# frames can attend to different regions of the crop.
+scene_enabled: true
+scene_dropout: 0.1
+scene_voxels: 32
+scene_encoder: cnn  # 'vit' or 'cnn', see src/models/scene_encoder.py
+# [xmin, xmax, ymin, ymax, zmin, zmax] around the anchor. The origin is the
+# anchor's own pelvis, so z reaches below it to cover the ground and above it
+# to cover head height; nothing here depends on an estimated floor level.
+scene_crop_bounds: [-1.0, 1.0, -1.0, 1.0, -1.2, 0.8]
+
+# Goal: the pelvis displacement (dx, dy, dz) in the anchor's canonical frame,
+# with no arrival time — how soon the goal is due is left to the text and scene
+# to imply. Including dz is what makes sitting, standing, and stairs steerable.
+# max_goal_horizon only bounds how far ahead training goals are sampled.
+goal_enabled: true
+goal_dropout: 0.1
+max_goal_horizon: 32
+
+# Conditioning
+# chance of dropping text, scene, and goal together for joint CFG
+joint_dropout: 0.05
+
+# Losses. The diffusion term works on the normalized rotation features; the
+# position term works on metric joints recovered by forward kinematics.
+feature_weight: 1.0
+position_weight: 1.0
+
+# Training
+name: null
+output: runs
+resume_checkpoint: null
+learning_rate: 0.0001
+batch_size: 256
+epochs: 1000
+workers: 4
+save_every: 10

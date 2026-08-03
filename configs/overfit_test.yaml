@@ -1,0 +1,41 @@
+# Overfitting test configuration
+path: data/nymeriaplus
+fps: 10.0
+window_size: 16
+history_size: 32
+
+timesteps: 50
+
+input_dim: 148
+output_dim: 148
+model_dim: 256
+ff_size: 512
+heads: 4
+layers: 4
+dropout: 0.0
+
+text_enabled: false
+text_cache: false
+
+scene_enabled: true
+scene_dropout: 0.0
+scene_voxels: 32
+scene_encoder: cnn
+scene_crop_bounds: [-1.0, 1.0, -1.0, 1.0, -1.2, 0.8]
+
+goal_enabled: true
+goal_dropout: 0.0
+max_goal_horizon: 32
+
+joint_dropout: 0.0
+
+feature_weight: 1.0
+position_weight: 1.0
+
+name: overfit_test
+output: runs
+learning_rate: 0.0005
+batch_size: 32
+epochs: 30
+workers: 2
+save_every: 10
