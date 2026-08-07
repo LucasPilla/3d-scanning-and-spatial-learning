@@ -2,7 +2,9 @@
 
 ## 1. Diagram
 
-![Architecture Diagram](/home/lucas/.gemini/antigravity-ide/brain/eec86bfe-a105-446c-ab42-ac998c2dd094/architecture_diagram_1785886849622.png)
+![Architecture Diagram](./images/dit_reference.png)
+
+*Source: DiT Paper*
 
 ## 2. Transformer Architecture
 
