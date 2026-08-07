@@ -2,153 +2,115 @@
 
 Text-, Scene-, and Goal-Conditioned Human Motion Diffusion Model on Nymeria Plus.
 
----
-
-## 1. Architecture Overview
-
-`nymeria_plus_motion` implements a sequence-to-sequence Motion Transformer denoiser for 3D human body motion diffusion, conditioned on natural language text, 3D voxel scene geometry, and 3D pelvis target goals.
-
-```
-                          ┌───────────────────────────┐
-                          │ Text Prompt (CLIP/BERT/T5)│
-                          └─────────────┬─────────────┘
-                                        │
- ┌────────────────────────┐             ▼             ┌───────────────────────┐
- │ Noisy Motion [B,T,148] │──► Motion Transformer ◄───│ 3D Voxel Scene Tokens │
- └────────────────────────┘             ▲             └───────────────────────┘
-                                        │
-                          ┌─────────────┴─────────────┐
-                          │ 3D Goal Vector [B, 3]     │
-                          └───────────────────────────┘
-                                        │
-                                        ▼
-                          ┌───────────────────────────┐
-                          │ Denoised 148-D Motion     │
-                          └───────────────────────────┘
-```
-
-### Key Components
-
-- **148-D Motion Representation:** Each frame is encoded invariant to world location:
-  - `[0:3]` Root translation delta ($\Delta x, \Delta y, \Delta z$) in the previous frame's facing yaw frame.
-  - `[3:4]` Root facing yaw delta ($\Delta \psi$).
-  - `[4:10]` Root residual orientation (6D continuous rotation matrix).
-  - `[10:148]` 23 SMPL body joint local rotations ($23 \times 6\text{D} = 138$ dimensions).
-- **Conditioning Modalities:**
-  - **Text:** Encoded via CLIP, DistilBERT, or T5 backbones.
-  - **Scene Geometry:** Encoded from $32\times32\times32$ voxel occupancy grids using a 3D CNN (`CNN3DSceneEncoder`) or 2D ViT.
-  - **Goal Target:** 3D pelvis displacement $[dx, dy, dz]$ relative to the anchor frame.
-- **Motion Diffusion Engine:** 50-step cosine DDPM schedule predicting clean motion ($x_0$-parameterization) with Classifier-Free Guidance (CFG) across text, scene, and goal gates.
-
-For in-depth mathematical details, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
----
-
-## 2. Installation Guide
-
-### Prerequisites
-- Python >= 3.9, < 3.12
-- PyTorch >= 2.8
-
-### Installation
-
-Clone the repository and install in editable mode:
+## Setup
 
 ```bash
+git clone <repository-url>
 cd nymeria_plus_motion
-pip install -e .
+pip install -e ".[download,preprocess]"
 ```
 
-To install optional dependencies for data preprocessing or dataset downloading:
+## Data Preparation
+
+To download and preprocess the dataset (requires SMPL models):
+```bash
+# 1. Download
+python -m src.datasets.nymeriaplus.download \
+  --url-json /path/to/urls.json \
+  --output data/nymeriaplus/download \
+  --fps 10
+
+# 2. Preprocess
+python -m src.datasets.nymeriaplus.preprocess \
+  --input data/nymeriaplus/download \
+  --output data/nymeriaplus \
+  --smpl-male-model /path/to/smpl/male.pkl \
+  --smpl-female-model /path/to/smpl/female.pkl
+```
+
+## Training
 
 ```bash
-# For dataset download utilities
-pip install -e ".[download]"
+# Pre-cache text features
+for encoder in clip bert t5; do
+  python -m src.cache --dataset data/nymeriaplus --text-encoder $encoder --split all --max-text-tokens 64
+done
 
-# For preprocessing (SciPy, SMPLX, Trimesh)
-pip install -e ".[preprocess]"
+# Train
+python -m src.train --config configs/default.yaml --name main_run --workers 4
 ```
 
----
+## Tests
 
-## 3. Directory Structure Explanation
-
+```bash
+# Overfit on a single batch to test the pipeline
+python -m src.train --config configs/overfit_test.yaml --name overfit_run
 ```
+
+## Demo
+
+```bash
+python -m demo.demo \
+  --config runs/main_run/config.yaml \
+  --checkpoint runs/main_run/checkpoints/main_run_epoch300.pth
+```
+
+## Evaluation
+
+Generate a window for every held-out test-split annotation, conditioned on
+that annotation's own history, scene, text, and goal, and save it alongside
+its ground truth:
+
+```bash
+python -m src.test \
+  --config runs/main_run/config.yaml \
+  --checkpoint runs/main_run/checkpoints/main_run_epoch300.pth \
+  --output runs/main_run/test_results.npz
+```
+
+Then browse the generated windows against ground truth in an interactive
+local viewer, with a search bar over the annotation text. Results are saved
+in world space, so the viewer can overlay each segment's real scene geometry
+(the per-object meshes/boxes, not the coarse occupancy grid the model
+conditions on) by pointing `--raw-scenes` at the raw Nymeria download, same
+as `demo.demo`:
+
+```bash
+python -m src.visualize \
+  --results runs/main_run/test_results.npz \
+  --raw-scenes /path/to/nymeria_dataset/download
+```
+
+For a pre-token-redesign checkpoint (e.g. `runs/v1`), use `src.test_legacy`
+instead; it writes the same result format, so `src.visualize` works
+unchanged:
+
+```bash
+python -m src.test_legacy \
+  --config runs/v1/config.yaml \
+  --checkpoint runs/v1/checkpoints/v1_epoch300.pth \
+  --output runs/v1/test_results.npz
+```
+
+## Directory Structure
+
+```text
 nymeria_plus_motion/
 ├── configs/                  # Yaml configuration files
-│   ├── default.yaml          # Master configuration with default hyperparameters
-│   └── overfit_test.yaml     # Fast single-batch overfit test configuration
-├── demo/                     # Interactive demo tool
-│   ├── demo.py               # Real-time interactive rollout visualizer
-│   └── scenes.py             # Empty-scene occupancy grid and skeleton helpers
+├── demo/                     # Interactive demo tool & visualizer
 ├── docs/                     # Detailed technical and dataset documentation
-│   ├── ARCHITECTURE.md       # Neural network architecture & mathematical formulation
-│   ├── DATASET.md            # Dataset specification and array layout
-│   └── NYMERIAPLUS.md        # Nymeria Plus data split and processing notes
 ├── pyproject.toml            # Project dependencies and packaging setup
 ├── README.md                 # Project guide (this file)
 └── src/                      # Source package
     ├── cache.py              # Text feature pre-caching script
-    ├── config.py             # Configuration loader, defaults, and builder functions
+    ├── config.py             # Configuration loader
     ├── inference.py          # Auto-regressive rollout state & generation engine
     ├── train.py              # Model training script
-    ├── datasets/             # Dataset implementations
-    │   └── nymeriaplus/      # Nymeria Plus loader, preprocessing & splits
-    ├── models/               # Model architectures
-    │   ├── diffusion.py      # DDPM diffusion wrapper & CFG sampling
-    │   ├── scene_encoder.py  # 3D CNN and ViT scene occupancy encoders
-    │   ├── text_encoder.py   # CLIP, DistilBERT, and T5 frozen text towers
-    │   └── transformer.py    # Motion Transformer denoiser
-    └── utils/                # Kinematic, geometry, scene, and statistics helpers
-        ├── checkpoint.py     # Resumable model checkpoint saving & loading
-        ├── geometry.py       # Local-to-world transforms and padding helpers
-        ├── kinematics.py     # Forward kinematics, SMPL tree, and 6D rotation math
-        ├── scene.py          # Local voxel grid crop & sampling utilities
-        └── statistics.py     # Normalization statistics loader and standard-scorer
+    ├── test.py               # Test-split generation script
+    ├── test_legacy.py        # Test-split generation script for v1-era checkpoints
+    ├── visualize.py          # Generated-vs-ground-truth browser viewer
+    ├── assets/                # Browser viewer page for visualize.py
+    ├── datasets/             # Dataset implementations (Nymeria Plus)
+    ├── models/               # Model architectures (Transformer, Encoders)
+    └── utils/                # Geometry, scene, and statistics helpers
 ```
-
----
-
-## 4. Dataset Caching & Training Workflows
-
-### Step 1: Pre-cache Text Features (Recommended)
-Pre-caching text embeddings speeds up training by avoiding redundant text tower evaluations during epochs:
-
-```bash
-for encoder in clip bert t5; do
-  python -m src.cache --dataset data/nymeriaplus --text-encoder $encoder --split all --max-text-tokens 64
-done
-```
-
-### Step 2: Train the Motion Diffusion Model
-
-Train using a configuration file:
-
-```bash
-python -m src.train --config configs/default.yaml --name my_experiment --workers 4
-```
-
-Checkpoint files and TensorBoard logs will be written to `runs/my_experiment/`.
-
-### Step 3: Inspect Generated Motion
-
-Run the interactive browser demo against a trained checkpoint:
-
-```bash
-python -m demo.demo \
-  --config runs/my_experiment/config.yaml \
-  --checkpoint runs/my_experiment/checkpoints/my_experiment_epoch300.pth
-```
-
----
-
-## 5. Quick-Start Command Reference
-
-| Task | Command |
-| :--- | :--- |
-| **Install Package** | `pip install -e .` |
-| **Cache Text Features** | `python -m src.cache --dataset data/nymeriaplus --text-encoder clip --split all` |
-| **Run Overfit Test** | `python -m src.train --config configs/overfit_test.yaml --name overfit_run` |
-| **Start Full Training** | `python -m src.train --config configs/default.yaml --name main_run --workers 4` |
-| **Resume Training** | `python -m src.train --config configs/default.yaml --name main_run --resume-checkpoint runs/main_run/checkpoints/main_run_epoch050.pth` |
-| **Run Interactive Demo** | `python -m demo.demo --config runs/main_run/config.yaml --checkpoint runs/main_run/checkpoints/main_run_epoch300.pth` |
