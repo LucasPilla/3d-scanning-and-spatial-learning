@@ -44,20 +44,21 @@ The environment geometry is represented as a 3D boolean voxel occupancy grid of 
 
 *   **3D positional encoding**: each token's anchor-local $(x, y, z)$ cell center runs through `Position3D`, a small shared MLP, and is added to the projected feature.
 
-### Goal (Legacy)
+### Goal
 
-The goal is the anchor-local pelvis position `(dx, dy, dz)` of **the window's own last real frame**, chosen deterministically rather than sampled from a random future horizon. Since windows are always exactly `window_size` real frames (see below), that frame is unambiguous, and the goal is by construction the same physical quantity as channels `[0:3]` of the motion feature — so it reuses the motion statistics' own pelvis channels for normalization instead of carrying separate `goal_mean`/`goal_std`.
+The goal is the anchor-local pelvis position `(dx, dy, dz)`. It is by construction the same physical quantity as channels `[0:3]` of the motion feature, so it reuses the motion statistics' own pelvis channels for normalization.
 
-*   **Fixed-length, randomly-placed windows**: a window is `window_size` frames whose start is drawn uniformly from within the annotation's span, falling back to the annotation's start when the span is too short to offer a choice. At the default `window_size: 48` this collapses to roughly one window per annotation; a smaller value turns repeated accesses of the same annotation into free sub-window augmentation, and lets history contain the earlier part of the very same described action. Either way the future side is never padded — `target_mask` is always all-`False`.
+There are two natural ways to make a diffusion model reach a goal:
 
-*   **Goal token**: `GoalTokenEmbedding` emits exactly one token at a fixed sequence position, always. It carries the encoded goal when one is present, and a learned null vector when the goal is absent or was dropped — the same null-conditioning idea classifier-free guidance uses. A fixed position means the rest of the network never has to locate the goal frame's index to attend to its value. Goal takes no part in AdaLN: the block conditioning vector is still exactly the timestep embedding.
+*   **Goal as a condition token (soft, CFG-guided)**: the goal enters the shared attention sequence just like text and scene, and the model is only *encouraged* toward it by the training loss. This supports classifier-free guidance (a `goal_guidance_scale`) to tune how strongly it's followed at sampling time, but reaching it is never guaranteed — the model can trade it off against the scene or the text. This is what the earlier, pre-redesign model (`v1`) does.
+*   **Goal as hard inpainting (architectural guarantee)**: every denoising step overwrites the target frame's pelvis position with the goal value directly, the same way history frames are fixed. Reaching the goal stops being a preference the loss encourages and becomes a constraint the sampling process enforces, at the cost of the freedom a soft token has to negotiate a path with the rest of the scene.
 
-*   **Hard position-only inpainting**: every denoising step overwrites channels `[0:3]` of frame `history_frames + window_size - 1` with the goal value, exactly as history frames are inpainted. This is what makes goal-following an architectural guarantee rather than something the loss merely encourages. Only the pelvis position is fixed; the rest of that frame's pose is still generated.
-
-*   **The presence mask is computed once.** `MotionDiffusion.training_loss` owns the goal-dropout draw and passes the same `goal_present` tensor to both the model and the inpainting step. Deriving them separately would let a sample whose token was dropped still read its goal off the inpainted channels — a training-time leak that would teach the model to ignore the token.
-
-*   **No CFG for goal**: a goal is either followed outright (token + inpaint) or absent (null token, no inpaint). There is nothing to extrapolate between, so there is no `goal_guidance_scale`.
+The current model uses **hard inpainting**. `GoalTokenEmbedding` still emits one token (a learned null vector when the goal is absent or was dropped) so the rest of the network knows whether a goal was set, but the actual position is enforced by inpainting rather than left to CFG — so there is no `goal_guidance_scale` for it.
 
 ## 5. Losses
 
-`MotionDiffusion.training_loss` returns a single `total` key: an MSE directly on the normalized anchored joint positions.
+The forward process corrupts the ground-truth future window $x_0$ at a random timestep $t$ in the usual DDPM way, $x_t = \sqrt{\bar\alpha_t}\, x_0 + \sqrt{1-\bar\alpha_t}\, \epsilon$ with $\epsilon \sim \mathcal{N}(0, I)$, and the transformer denoiser predicts the clean window $\hat{x}_0$ directly from $x_t$ (not the noise $\epsilon$). `MotionDiffusion.training_loss` returns a single `total` key: a masked MSE between $\hat{x}_0$ and $x_0$ over the un-padded future frames, scaled by `position_weight` ($\lambda$):
+
+$$\mathcal{L} = \lambda \cdot \frac{1}{|\text{valid}| \cdot D}\sum_{i \,\in\, \text{valid}} \left(\hat{x}_{0,i} - x_{0,i}\right)^2$$
+
+where $D = 72$ is the per-frame feature dimension (`JOINT_COUNT * 3`) and "valid" excludes any padded target frames — in practice the future side is never padded, so this is a plain MSE on the normalized anchored joint-position features. There is only this one loss term; no forward kinematics, velocity, or foot-contact term is involved.

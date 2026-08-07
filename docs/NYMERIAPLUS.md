@@ -35,7 +35,17 @@ After applying the filtering and preprocessing steps above, the usable dataset s
 *   **Total Hours of Motion (at 10 FPS):** 181.96 hours
 *   **Total Atomic Annotations:** 144,356
 
-## 4. Dataset Directory Structure
+## 4. Train / Validation / Test Split
+
+The 707 filtered sequences are split at the **sequence level**, not per-window or per-annotation: a fixed assignment in `splits.json` puts an entire recording — the participant, the room, and every one of its annotations — into exactly one split. This keeps test-split rooms and motions genuinely unseen during training, rather than just held-out sub-windows of an otherwise-seen sequence.
+
+*   **Train:** 548 sequences
+*   **Validation:** 83 sequences
+*   **Test:** 76 sequences
+
+Only the train split feeds `normalization.npz`'s per-channel statistics (`compute_normalization` in `preprocess.py`), so validation and test motion never leaks into the statistics the model is normalized against.
+
+## 5. Dataset Directory Structure
 
 The preprocessed dataset must follow this layout:
 
@@ -52,7 +62,7 @@ data/nymeriaplus/
     └── ...
 ```
 
-## 5. Expected Data Layout
+## 6. Expected Data Layout
 
 *   **`joints.npy`**: A float32 or float64 numpy array of shape `[Num_Frames, 24, 3]`. It contains the metric 3D position (in meters) of 24 SMPL joints for every frame in the recording. No rotations are stored.
 *   **`yaw.npy`**: A float32 numpy array of shape `[Num_Frames]`. It represents the forward-facing angle (heading) of the person in radians on the horizontal plane.
