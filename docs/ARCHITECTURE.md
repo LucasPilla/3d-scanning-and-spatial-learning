@@ -1,105 +1,63 @@
-# System Architecture & Model Design
+# Architecture
 
-This document details the neural network architecture, diffusion sampling pipeline, spatial scene encoding, motion representation, and canonical frame transformations in `nymeria_plus_motion`.
+## 1. Diagram
 
----
+![Architecture Diagram](/home/lucas/.gemini/antigravity-ide/brain/eec86bfe-a105-446c-ab42-ac998c2dd094/architecture_diagram_1785886849622.png)
 
-## 1. High-Level Pipeline
+## 2. Transformer Architecture
 
-The system generates 3D human body motion conditioned on **text prompts**, **3D spatial scene crops**, and **3D target goals**.
+Our model relies on token concatenation with shared self-attention.
 
-```
-                         ┌───────────────────────┐
-                         │ Text Prompt (CLIP)    │
-                         └───────────┬───────────┘
-                                     │
-┌───────────────────────┐            ▼            ┌───────────────────────┐
-│ Noisy Motion [B,T,148]│──► Motion Transformer ◄─│ Spatial Scene Tokens  │
-└───────────────────────┘            ▲            └───────────────────────┘
-                                     │
-                         ┌───────────┴───────────┐
-                         │ 3D Goal Vector [B, 3] │
-                         └───────────────────────┘
-                                     │
-                                     ▼
-                         ┌───────────────────────┐
-                         │ Denoised 148-D Motion │
-                         └───────────────────────┘
-```
+*   **Sequence**: The input to the transformer is a single sequence of tokens constructed by concatenating all condition tokens onto the motion tokens.
 
----
+    *   **Motion Tokens**: `64 tokens` (16 history + 48 future). The 72-D joint positions per frame are linearly projected into the model's hidden dimension, and sinusoidal positional embeddings plus a learned token-type embedding are added.
 
-## 2. Motion Representation & Canonical Anchor Space
+    *   **Text Tokens**: `64 tokens`, direct projection of the frozen encoder's per-token hidden states.
 
-To achieve translation- and rotation-invariant motion generation:
+    *   **Scene Tokens**: `64 tokens`, each carrying a real 3D positional encoding.
 
-### A. 148-Dimensional Motion Feature Vector ($\mathbf{x} \in \mathbb{R}^{148}$)
-At each frame $t$, the motion pose is represented as:
-* **Root Linear Velocity (`[0:3]`):** $\mathbf{v}_{\text{root}} = (\Delta x, \Delta y, \Delta z)$ in the local facing frame.
-* **Facing Yaw Angular Velocity (`[3:5]`):** $(\cos \Delta\psi, \sin \Delta\psi)$ relative to the previous frame.
-* **24-Joint Rotations (`[5:149]`):** 24 body joint rotations expressed as **6D continuous rotation matrices** ($24 \times 6 = 144$ dimensions), avoiding gimbal lock or quaternion discontinuities.
+    *   **Goal Token**: `1 token`
 
----
+*   **Self-Attention**: Every transformer block applies a standard Multi-Head Self-Attention over this combined sequence. The motion tokens can attend directly to the text, the scene layout, and the goal vector simultaneously, without separate cross-attention layers.
 
-### B. Canonical Anchor Frame Transformation
+*   **Classifier-Free Guidance (CFG)**: Missing or dropped conditions (e.g., dropping text to allow unconditional sampling) are simply excluded from the sequence using a key-padding mask, meaning the network dynamically adjusts to whichever conditions are present.
 
-All history frames (32 frames) and future prediction windows (16 frames) are transformed relative to the **anchor frame** ($t_{\text{anchor}} = 31$):
+*   **Token Type Embeddings**: Concatenating five kinds of token into one sequence leaves self-attention with no signal for which is which beyond content. `TokenTypeEmbedding` adds one learned vector per modality — `0 = history`, `1 = future`, `2 = text`, `3 = scene`, `4 = goal` — to every token in that span, the same idea as BERT's segment embedding.
 
-1. **Anchor Pelvis Origin (0, 0, 0):**
-   The origin $(0, 0, 0)$ of the canonical frame is defined directly at the 3D pelvis position at the anchor frame ($t_{\text{anchor}} = 31$).
-   * Relative to $(0, 0, 0)$, standing feet sit at $Z \approx -0.92\text{m}$.
-   * The 3D scene crop `[-1.0, 1.0, -1.0, 1.0, -1.2, 0.8]` is centered at $(0, 0, 0)$ (reaching $-1.2\text{m}$ down to cover the floor and $+0.8\text{m}$ up to cover head height).
-   * Target goals $[dx, dy, dz]$ are expressed as 3D spatial displacements relative to $(0, 0, 0)$.
-2. **Facing Yaw Rotation ($\psi_{\text{anchor}}$):**
-   Derived from the 3D hip vector ($J_{\text{R\_Hip}} - J_{\text{L\_Hip}}$). All joint positions, root deltas, spatial scene crops, and 3D target goals are rotated by:
-   $$R_{\text{canonical}} = \text{YawRotation}(-\psi_{\text{anchor}})$$
-3. **Rollout Stitching:**
-   By normalizing every window to its local anchor frame, auto-regressive window rollouts stitch seamlessly across arbitrary world trajectories during long-sequence generation.
+*   **Diffusion Timestep Injection**: It modulates the activations of every block via an **AdaLN-Zero** mechanism, as per ablation from DiT paper.
 
----
+## 4. Condition Encoders
 
-## 3. Core Network Modules
+### Text Encoder
 
-### A. Motion Transformer (`src/models/transformer.py`)
+Text tokens are generated using a frozen language model (e.g., CLIP, DistilBERT, or T5). The raw text string is tokenized, passed through the pre-trained model, and the resulting dense hidden states are projected into the transformer's dimension. 
 
-The backbone model is a sequence-to-sequence Transformer operating on 148-dimensional motion features. Each layer applies sequential cross-attention branches:
+### Scene Encoder
 
-1. **Motion Self-Attention:** Temporal self-attention across 48 motion frames (32 history + 16 window).
-2. **Scene Cross-Attention:** Attends to 64 spatial scene tokens extracted by the 3D CNN.
-3. **Text Cross-Attention:** Attends to text tokens (CLIP/BERT embeddings).
-4. **Goal Cross-Attention:** Attends to 3D local goal position vectors $[dx, dy, dz]$. Single-token cross-attention uses a learned `null_token` prepended to prevent Softmax collapsing.
-5. **Feed-Forward Network (FFN):** GELU activation with residual connections.
+The environment geometry is represented as a 3D boolean voxel occupancy grid of shape $64 \times 64 \times 64$ (at 5cm resolution, bounding a $3.2\text{m}^3$ volume around the person).
 
----
+*   `CNN3DSceneEncoder` downsamples the grid with stride-2 convolutions ($64 \rightarrow 32 \rightarrow 16 \rightarrow 8 \rightarrow 4$), doubling channels as resolution shrinks.
 
-### B. Motion Diffusion Engine (`src/models/diffusion.py`)
+*   **The output resolution is fixed at $4 \times 4 \times 4$, not derived from the input.** The number of stride-2 layers is computed from `scene_voxels` at construction, so the scene contributes **64 tokens**.
 
-* **Noise Schedule:** 50-timestep cosine beta schedule (`cosine_beta_schedule`).
-* **Prediction Target:** Direct clean motion prediction ($\mathbf{x}_0$-parameterization) rather than $\epsilon$-noise prediction.
-* **Classifier-Free Guidance (CFG):** Supports joint unconditional dropout for text, scene, and goal.
-* **Loss Function:** Combined weighted MSE loss:
-  $$\mathcal{L}_{\text{total}} = w_{\text{feature}} \cdot \mathcal{L}_{\text{feature}} + w_{\text{position}} \cdot \mathcal{L}_{\text{position}}$$
-  * $\mathcal{L}_{\text{feature}}$: MSE loss on normalized 148-D features.
-  * $\mathcal{L}_{\text{position}}$: Differentiable Forward Kinematics joint position MSE loss in meters.
+*   Because of the convolutional receptive field, each token observes a $1.55\text{m}$ physical area, providing rich overlapping context of stairs, tables, or walls.
 
----
+*   **3D positional encoding**: each token's anchor-local $(x, y, z)$ cell center runs through `Position3D`, a small shared MLP, and is added to the projected feature.
 
-### C. 3D Scene Encoder (`src/models/scene_encoder.py`)
+### Goal (Legacy)
 
-* **Backbone:** `CNN3DSceneEncoder`
-* **Input:** $32 \times 32 \times 32$ 3D occupancy / TSDF grid ($6.25\text{ cm}$ resolution).
-* **Layer-by-Layer Feature Grid Downsampling:**
-  $$32 \times 32 \times 32 \longrightarrow 16 \times 16 \times 16 \longrightarrow 8 \times 8 \times 8 \longrightarrow 4 \times 4 \times 4$$
-* **Layer-by-Layer 3D Receptive Field Expansion:**
-  $$1 \times 1 \times 1 \longrightarrow 3 \times 3 \times 3 \longrightarrow 7 \times 7 \times 7 \longrightarrow 15 \times 15 \times 15 \text{ voxels}$$
-  $$(6.25\text{ cm} \longrightarrow 18.75\text{ cm} \longrightarrow 43.75\text{ cm} \longrightarrow 93.75\text{ cm})$$
+The goal is the anchor-local pelvis position `(dx, dy, dz)` of **the window's own last real frame**, chosen deterministically rather than sampled from a random future horizon. Since windows are always exactly `window_size` real frames (see below), that frame is unambiguous, and the goal is by construction the same physical quantity as channels `[0:3]` of the motion feature — so it reuses the motion statistics' own pelvis channels for normalization instead of carrying separate `goal_mean`/`goal_std`.
 
-* **Output:** **64 spatial feature tokens** ($4 \times 4 \times 4$ volumetric grid, 256-D per token, $50\text{ cm}$ resolution per token).
-* **3D Receptive Field:** Each of the 64 spatial tokens has an effective 3D receptive field of **$15 \times 15 \times 15$ input voxels** ($93.75\text{ cm} \approx 0.94\text{ meters}$ in physical space). This wide receptive field provides rich contextual overlap between adjacent 3D spatial tokens, allowing the model to reason about connected 3D geometry (e.g., chair seats connected to legs and table tops).
+*   **Fixed-length, randomly-placed windows**: a window is `window_size` frames whose start is drawn uniformly from within the annotation's span, falling back to the annotation's start when the span is too short to offer a choice. At the default `window_size: 48` this collapses to roughly one window per annotation; a smaller value turns repeated accesses of the same annotation into free sub-window augmentation, and lets history contain the earlier part of the very same described action. Either way the future side is never padded — `target_mask` is always all-`False`.
 
----
+*   **Goal token**: `GoalTokenEmbedding` emits exactly one token at a fixed sequence position, always. It carries the encoded goal when one is present, and a learned null vector when the goal is absent or was dropped — the same null-conditioning idea classifier-free guidance uses. A fixed position means the rest of the network never has to locate the goal frame's index to attend to its value. Goal takes no part in AdaLN: the block conditioning vector is still exactly the timestep embedding.
 
-### D. Differentiable Kinematics (`src/utils/kinematics.py`)
-* **Forward Kinematics (`features_to_joints`):**
-  Reconstructs 3D joint positions $\mathbf{J} \in \mathbb{R}^{24 \times 3}$ in metric space from 6D rotations and participant bone offsets:
-  $$J_{\text{child}} = J_{\text{parent}} + R_{\text{parent}} \cdot O_{\text{child}}$$
+*   **Hard position-only inpainting**: every denoising step overwrites channels `[0:3]` of frame `history_frames + window_size - 1` with the goal value, exactly as history frames are inpainted. This is what makes goal-following an architectural guarantee rather than something the loss merely encourages. Only the pelvis position is fixed; the rest of that frame's pose is still generated.
+
+*   **The presence mask is computed once.** `MotionDiffusion.training_loss` owns the goal-dropout draw and passes the same `goal_present` tensor to both the model and the inpainting step. Deriving them separately would let a sample whose token was dropped still read its goal off the inpainted channels — a training-time leak that would teach the model to ignore the token.
+
+*   **No CFG for goal**: a goal is either followed outright (token + inpaint) or absent (null token, no inpaint). There is nothing to extrapolate between, so there is no `goal_guidance_scale`.
+
+## 5. Losses
+
+`MotionDiffusion.training_loss` returns a single `total` key: an MSE directly on the normalized anchored joint positions.
