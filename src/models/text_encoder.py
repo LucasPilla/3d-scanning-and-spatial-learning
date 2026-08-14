@@ -13,11 +13,10 @@ from transformers import (
     T5EncoderModel,
 )
 
-# Annotations run about 47 tokens on average, so this keeps most of them whole
-# while bounding the cross-attention memory and the on-disk feature cache.
+
 DEFAULT_MAX_TOKENS = 64
 
-# Selectable backbones, for configuration validation and `--help` text.
+
 TEXT_ENCODER_NAMES = ("clip", "bert", "t5")
 
 

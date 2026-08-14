@@ -28,6 +28,18 @@ def save_checkpoint(model, optimizer, path: str | Path, epoch: int) -> None:
     }, path)
 
 
+def checkpoint_state_dict(path: str | Path, map_location="cpu") -> dict:
+    """
+    Read a checkpoint's saved trainable weights without touching a model --
+    e.g. to detect which optional condition submodules it was trained with
+    before constructing the model that will load it (see
+    src.config.build_inference).
+    """
+
+    checkpoint = torch.load(path, map_location=map_location, weights_only=False)
+    return {key.removeprefix("module."): value for key, value in checkpoint["model"].items()}
+
+
 def load_checkpoint(
     model, path: str | Path, optimizer=None, *, train: bool = False, map_location="cpu"
 ) -> int | None:

@@ -25,6 +25,21 @@ def local_meshgrid(bounds, size: int) -> np.ndarray:
     return np.stack(np.meshgrid(*axes, indexing="ij"), axis=-1).reshape(-1, 3)
 
 
+def scene_token_coordinates(bounds, resolution: int) -> np.ndarray:
+    """
+    Cell centers of a downsampled crop, ordered like the encoder's tokens.
+
+    Must apply the same (z, x, y) transpose `crop_scene` does, or these
+    coordinates would silently label the wrong tokens.
+    """
+
+    resolution = int(resolution)
+    grid = local_meshgrid(bounds, resolution).reshape(
+        resolution, resolution, resolution, 3
+    )
+    return grid.transpose(2, 0, 1, 3).reshape(-1, 3)
+
+
 def crop_scene(
     occupancy: np.ndarray,
     scene_bounds: np.ndarray,
@@ -34,9 +49,14 @@ def crop_scene(
     size: int,
     *,
     local_grid: np.ndarray | None = None,
+    return_points: bool = False,
 ) -> np.ndarray:
     """
     Query one anchor-fixed local occupancy crop.
+
+    `return_points=True` also returns the crop's world-space voxel centers
+    and raw occupied/inside masks, e.g. for visualizing which points were
+    actually occupied.
     """
 
     occupancy = np.asarray(occupancy)
@@ -63,4 +83,7 @@ def crop_scene(
         np.bool_, copy=True
     )
     values[~inside] = True
-    return values.reshape(size, size, size).transpose(2, 0, 1)
+    cropped = values.reshape(size, size, size).transpose(2, 0, 1)
+    if return_points:
+        return cropped, points, values, inside
+    return cropped

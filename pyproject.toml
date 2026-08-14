@@ -16,7 +16,6 @@ dependencies = [
   "torchvision>=0.23,<0.24",
   "tqdm>=4.66,<5",
   "transformers>=4.51,<5",
-  "vit-pytorch>=1.23,<2",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +26,16 @@ preprocess = [
   "scipy>=1.12,<2",
   "smplx>=0.1.28,<0.2",
   "trimesh>=4.1,<5",
+  # >=0.1.8 requires numpy>=2, conflicting with this project's numpy<1.24 pin.
+  "fast-simplification>=0.1.4,<0.1.8",
+]
+# demo/real_scene.py loads real ShapeR meshes / Boxy boxes for the live
+# demo's scene -- same trimesh + fast-simplification decimation pipeline as
+# preprocessing, so it reuses that extra rather than duplicating it.
+demo = [
+  "scipy>=1.12,<2",
+  "trimesh>=4.1,<5",
+  "fast-simplification>=0.1.4,<0.1.8",
 ]
 
 [tool.setuptools.packages.find]

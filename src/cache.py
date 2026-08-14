@@ -11,7 +11,6 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from src.config import text_cache_path
 from src.datasets.nymeriaplus.dataset import NymeriaDataset
 from src.models.text_encoder import (
     DEFAULT_MAX_TOKENS,
@@ -27,9 +26,13 @@ def build_text_cache(
     device="cpu",
     batch_size: int = 256,
     max_tokens: int = DEFAULT_MAX_TOKENS,
+    window_size: int = 16,
 ) -> None:
     """
     Encode annotations for dataset splits and save ordered feature arrays.
+
+    `window_size` must match the training config's: NymeriaDataset asserts
+    every annotation is at least that long, and a mismatch asserts wrong.
     """
 
     dataset = Path(dataset).expanduser().resolve()
@@ -46,6 +49,7 @@ def build_text_cache(
         texts = NymeriaDataset(
             dataset,
             split=s,
+            window_size=window_size,
             scene_enabled=False,
             text_enabled=False,
             goal_enabled=False,
@@ -86,6 +90,12 @@ def main() -> None:
         default=DEFAULT_MAX_TOKENS,
         help="must match max_text_tokens in the training configuration",
     )
+    parser.add_argument(
+        "--window-size",
+        type=int,
+        default=16,
+        help="must match window_size in the training configuration",
+    )
     parser.add_argument("--device")
     args = parser.parse_args()
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
@@ -96,6 +106,7 @@ def main() -> None:
         device=device,
         batch_size=args.batch_size,
         max_tokens=args.max_text_tokens,
+        window_size=args.window_size,
     )
 
 

@@ -8,6 +8,8 @@ this research.
 
 NymeriaPlus is a large-scale multimodal dataset capturing 3D human motion in real-world environments. It includes egocentric multi-camera video, IMU data, high-fidelity 3D human body tracking (SMPL), 3D scene meshes, and text annotations describing atomic actions. The dataset features diverse environments and complex object interactions.
 
+![NymeriaPlus dataset examples](./assets/images/nymeriaplus.png)
+
 ## 2. Curation and Filtering
 
 To ensure high-quality training sequences, we apply strict filters in two stages:

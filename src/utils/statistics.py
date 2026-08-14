@@ -1,5 +1,5 @@
 """
-Standard-score statistics for canonical motion features and pelvis goals.
+Standard-score statistics for anchored joint-position features.
 """
 
 from __future__ import annotations
@@ -14,19 +14,18 @@ import torch
 @dataclass(frozen=True)
 class MotionStatistics:
     """
-    Per-channel standard-score statistics for the 148-D motion features.
+    Per-channel standard-score statistics for the 72-D anchored joint-position
+    motion features (`JOINT_COUNT * 3`, see `src.utils.geometry`).
 
-    Goal statistics are kept separately because the goal is an anchor-local
-    pelvis offset, which the delta-based motion features no longer describe.
+    The goal has no statistics of its own: it is the window's own last pelvis
+    position, so it shares channels `[0:3]` with the motion feature.
     """
 
     mean: np.ndarray
     std: np.ndarray
-    goal_mean: np.ndarray
-    goal_std: np.ndarray
 
     def __post_init__(self) -> None:
-        for name in ("mean", "std", "goal_mean", "goal_std"):
+        for name in ("mean", "std"):
             object.__setattr__(
                 self, name, np.asarray(getattr(self, name), dtype=np.float32)
             )
@@ -34,20 +33,15 @@ class MotionStatistics:
     @classmethod
     def load(cls, path: str | Path) -> "MotionStatistics":
         """
-        Load feature and goal standard-score statistics.
+        Load feature standard-score statistics.
         """
 
         with np.load(path, allow_pickle=False) as values:
-            return cls(
-                values["mean"],
-                values["std"],
-                values["goal_mean"],
-                values["goal_std"],
-            )
+            return cls(values["mean"], values["std"])
 
     def normalize(self, values):
         """
-        Standardize canonical motion features along the last dimension.
+        Standardize anchored joint-position features along the last dimension.
         """
 
         mean, std = self._match(self.mean, self.std, values)
@@ -55,18 +49,19 @@ class MotionStatistics:
 
     def denormalize(self, values):
         """
-        Restore standardized features to canonical metric features.
+        Restore standardized features to metric anchor-local joint positions.
         """
 
         mean, std = self._match(self.mean, self.std, values)
         return values * std + mean
 
-    def normalize_goal(self, values):
+    def normalize_pelvis(self, values):
         """
-        Standardize an anchor-local pelvis goal displacement (dx, dy, dz).
+        Standardize an anchor-local pelvis position (dx, dy, dz) with the same
+        per-channel statistics as the motion feature's own channels [0:3].
         """
 
-        mean, std = self._match(self.goal_mean, self.goal_std, values)
+        mean, std = self._match(self.mean[..., :3], self.std[..., :3], values)
         return (values - mean) / std
 
     @staticmethod

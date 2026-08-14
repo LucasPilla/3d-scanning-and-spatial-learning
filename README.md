@@ -1,6 +1,22 @@
-# nymeria_plus_motion
+# Human Motion Generation from Text, Scene and Trajectory
 
-Text-, Scene-, and Goal-Conditioned Human Motion Diffusion Model on Nymeria Plus.
+Autoregressive rollouts on held-out test-split segments, conditioned on text, scene, and goal:
+
+| | | |
+|---|---|---|
+| ![Cooking](./docs/assets/gifs/cooking.gif) | ![Fridge](./docs/assets/gifs/fridge.gif) | ![Laying Down](./docs/assets/gifs/laying_down.gif) |
+| Cooking | Fridge | Laying Down |
+| ![Sitting](./docs/assets/gifs/sitting.gif) | ![Stairs](./docs/assets/gifs/stairs.gif) | ![Walking](./docs/assets/gifs/walking.gif) |
+| Sitting | Stairs | Walking |
+
+Ablations on a synthetic scene, varying the classifier-free guidance scale of each condition from 0.0 to 3.0 in isolation:
+
+| | |
+|---|---|
+| ![Text Ablation](./docs/assets/gifs/synthetic_text_ablation.gif) | ![Goal Ablation](./docs/assets/gifs/synthetic_goal_ablation.gif) |
+| Text Ablation | Goal Ablation |
+| ![Scene Ablation](./docs/assets/gifs/synthetic_scene_ablation.gif) | ![No-Obstacle Scene Ablation](./docs/assets/gifs/synthetic_noobstacle_scene_ablation.gif) |
+| Scene Ablation | No-Obstacle Scene Ablation |
 
 ## Setup
 
@@ -57,39 +73,41 @@ python -m demo.demo \
 
 ## Evaluation
 
-Generate a window for every held-out test-split annotation, conditioned on
-that annotation's own history, scene, text, and goal, and save it alongside
-its ground truth:
+Roll out every held-out test-split segment autoregressively -- window 1
+conditioned on that annotation's own history, scene, text, and goal, every
+window after it conditioned on the model's own prior generation -- and save
+it alongside ground truth:
 
 ```bash
-python -m src.test \
+python -m src.evaluation.test \
   --config runs/main_run/config.yaml \
   --checkpoint runs/main_run/checkpoints/main_run_epoch300.pth \
   --output runs/main_run/test_results.npz
 ```
 
-Then browse the generated windows against ground truth in an interactive
-local viewer, with a search bar over the annotation text. Results are saved
-in world space, so the viewer can overlay each segment's real scene geometry
-(the per-object meshes/boxes, not the coarse occupancy grid the model
-conditions on) by pointing `--raw-scenes` at the raw Nymeria download, same
-as `demo.demo`:
+Then browse the rolled-out segments against ground truth in a local viewer,
+playing each segment continuously (not window by window), overlaid on real
+per-object scene geometry near its anchor by pointing `--raw-scenes` at the
+raw Nymeria download:
 
 ```bash
-python -m src.visualize \
+python -m src.evaluation.visualize_categories \
   --results runs/main_run/test_results.npz \
   --raw-scenes /path/to/nymeria_dataset/download
 ```
 
-For a pre-token-redesign checkpoint (e.g. `runs/v1`), use `src.test_legacy`
-instead; it writes the same result format, so `src.visualize` works
-unchanged:
+Prints the local URL to open (`--port`, default `8002`).
+
+Score every test-split segment with a full autoregressive rollout (each
+window after the first conditioned on the model's own prior generation, not
+ground truth), reporting collision rate, floor-contact distance, and
+goal-reaching error against a ground-truth baseline:
 
 ```bash
-python -m src.test_legacy \
-  --config runs/v1/config.yaml \
-  --checkpoint runs/v1/checkpoints/v1_epoch300.pth \
-  --output runs/v1/test_results.npz
+python -m src.evaluation.eval \
+  --config runs/main_run/config.yaml \
+  --checkpoint runs/main_run/checkpoints/main_run_epoch300.pth \
+  --output runs/main_run/eval_results.npz
 ```
 
 ## Directory Structure
@@ -106,10 +124,12 @@ nymeria_plus_motion/
     ├── config.py             # Configuration loader
     ├── inference.py          # Auto-regressive rollout state & generation engine
     ├── train.py              # Model training script
-    ├── test.py               # Test-split generation script
-    ├── test_legacy.py        # Test-split generation script for v1-era checkpoints
-    ├── visualize.py          # Generated-vs-ground-truth browser viewer
-    ├── assets/                # Browser viewer page for visualize.py
+    ├── evaluation/            # Test-split generation & browser viewers
+    │   ├── test.py            # Full-split autoregressive rollout script
+    │   ├── test_categories.py # Hand-picked category-segment rollout script
+    │   ├── eval.py             # Collision/floor-contact/goal-reaching rollout metrics
+    │   ├── visualize_categories.py # Ragged, per-segment rollout browser viewer
+    │   └── assets/            # Browser viewer pages for the scripts above
     ├── datasets/             # Dataset implementations (Nymeria Plus)
     ├── models/               # Model architectures (Transformer, Encoders)
     └── utils/                # Geometry, scene, and statistics helpers

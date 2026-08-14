@@ -11,8 +11,6 @@ import torch.nn as nn
 import torch.nn.functional as functional
 from tqdm import tqdm
 
-from src.utils.kinematics import features_to_joints
-
 
 def cosine_beta_schedule(timesteps: int) -> torch.Tensor:
     """
@@ -41,21 +39,13 @@ class MotionDiffusion(nn.Module):
         timesteps: int = 50,
         window_size: int = 16,
         *,
-        statistics=None,
-        feature_weight: float = 1.0,
-        position_weight: float = 0.0,
+        position_weight: float = 1.0,
     ):
         super().__init__()
         self.model = model
         self.timesteps = int(timesteps)
         self.window_size = int(window_size)
-        self.statistics = statistics
-        self.feature_weight = float(feature_weight)
         self.position_weight = float(position_weight)
-        if self.position_weight and statistics is None:
-            raise ValueError(
-                "The position loss needs motion statistics to denormalize features"
-            )
         betas = cosine_beta_schedule(self.timesteps)
         alphas = 1.0 - betas
         cumulative = torch.cumprod(alphas, dim=0)
@@ -105,13 +95,16 @@ class MotionDiffusion(nn.Module):
         history_frames: int,
         **arguments,
     ):
-        return self.model(
+        # Condition tokens are appended after motion tokens, so the raw
+        # output can run longer than history+window; truncate to match.
+        predicted = self.model(
             window[:, history_frames:],
             steps,
             window[:, :history_frames],
             history_mask,
             **arguments,
         )
+        return predicted[:, : history_frames + self.window_size]
 
     def training_loss(
         self,
@@ -120,18 +113,17 @@ class MotionDiffusion(nn.Module):
         history,
         history_mask,
         *,
-        bone_offsets=None,
         text=None,
         text_features=None,
         scene=None,
         goal=None,
+        window_progress=None,
         noise=None,
+        target_mask=None,
     ):
         """
-        Compute the weighted denoising loss for one batch.
-
-        Returns a dict of unweighted scalars plus the weighted `total` under
-        which backward is called, so every term can be logged separately.
+        Compute the weighted denoising loss for one batch, returned as a
+        dict with the weighted `total` to call backward on.
         """
 
         history_frames = history.shape[1]
@@ -140,6 +132,7 @@ class MotionDiffusion(nn.Module):
             noise = torch.randn_like(clean_window)
         noisy_window = self.q_sample(clean_window, timesteps, noise)
         self._inpaint(noisy_window, history, history_frames)
+
         predicted_window = self._predict_window(
             noisy_window,
             timesteps,
@@ -149,31 +142,23 @@ class MotionDiffusion(nn.Module):
             text_features=text_features,
             scene=scene,
             goal=goal,
+            window_progress=window_progress,
+            target_mask=target_mask,
         )
         predicted_motion = predicted_window[:, history_frames:]
 
-        losses = {
-            "feature": functional.mse_loss(predicted_motion, clean_motion),
-        }
-        total = self.feature_weight * losses["feature"]
-        if not self.position_weight:
-            losses["total"] = total
-            return losses
-
-        if bone_offsets is None:
-            raise ValueError("The position loss needs per-sample bone offsets")
-        # The window's own root deltas integrate from the identity pose at the
-        # anchor, so both skeletons land in the same canonical frame with no
-        # world transform anywhere.
-        predicted_joints = features_to_joints(
-            self.statistics.denormalize(predicted_motion), bone_offsets
-        )
-        target_joints = features_to_joints(
-            self.statistics.denormalize(clean_motion), bone_offsets
-        )
-        losses["position"] = functional.mse_loss(predicted_joints, target_joints)
-        losses["total"] = total + self.position_weight * losses["position"]
-        return losses
+        # Padded positions hold zeros, not real motion -- mask them out so
+        # they don't pull the loss toward zero.
+        valid = (~target_mask).unsqueeze(-1).float() if target_mask is not None else None
+        if valid is None:
+            total = functional.mse_loss(predicted_motion, clean_motion)
+        else:
+            squared_error = (predicted_motion - clean_motion).square() * valid
+            total = (
+                squared_error.sum() / valid.sum().clamp_min(1.0)
+                / predicted_motion.shape[-1]
+            )
+        return {"total": self.position_weight * total}
 
     @torch.no_grad()
     def sample_window(
@@ -185,14 +170,17 @@ class MotionDiffusion(nn.Module):
         text_features=None,
         scene=None,
         goal=None,
+        window_progress=None,
         text_guidance_scale: float = 1.0,
-        goal_guidance_scale: float = 1.0,
         scene_guidance_scale: float = 1.0,
+        goal_guidance_scale: float = 1.0,
         generator=None,
         show_progress: bool = False,
     ) -> torch.Tensor:
         """
-        Sample one window with fixed history, conditioned on a pelvis goal.
+        Sample one window with fixed history. Goal is a soft, CFG-guided
+        condition like text/scene, not hard-inpainted -- `goal_guidance_scale`
+        controls how strongly it's followed.
         """
 
         device = next(self.model.parameters()).device
@@ -212,8 +200,7 @@ class MotionDiffusion(nn.Module):
         was_training = self.model.training
         self.model.eval()
         try:
-            # The memories depend on the conditions alone, so they are built
-            # once and reused by every step and every guidance pass.
+            # Conditions don't change across steps, so build once and reuse.
             conditions = self.model.encode_conditions(
                 batch,
                 device,
@@ -221,13 +208,13 @@ class MotionDiffusion(nn.Module):
                 text_features=text_features,
                 scene=scene,
                 goal=goal,
+                window_progress=window_progress,
             )
-            # A modality absent from `conditions` contributes nothing whether
-            # or not it is dropped, so guiding on it could only cancel out.
+            # Guiding on a modality that's absent would only cancel out.
             scales = {
                 "text": float(text_guidance_scale),
-                "goal": float(goal_guidance_scale),
                 "scene": float(scene_guidance_scale),
+                "goal": float(goal_guidance_scale),
             }
             guided = tuple(
                 name for name, scale in scales.items()
@@ -277,6 +264,6 @@ class MotionDiffusion(nn.Module):
                     motion = mean
         finally:
             self.model.train(was_training)
-        # The history region is re-fixed at the top of every step and discarded
-        # here, so it never needs inpainting on the way out.
+        # History is re-fixed at the top of every step, so it needs no
+        # inpainting here on the way out.
         return motion[:, history_frames:]

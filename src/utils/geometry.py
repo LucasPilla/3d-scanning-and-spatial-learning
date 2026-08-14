@@ -1,11 +1,27 @@
 """
 Geometry and kinematic transforms.
+
+The motion feature vector is anchored joint positions: `[T, JOINT_COUNT, 3]`
+flattened to `[T, FEATURE_DIM]`, each frame's joints expressed relative to one
+fixed anchor (the world position/yaw of the last history frame, or the
+window's first frame when there is no history). Everything a window's model
+sees shares that same anchor: history, the frames being generated, the goal,
+and the scene crop. `anchor_local` below is the world-to-anchor transform.
 """
 
 from __future__ import annotations
 
 import numpy as np
 import torch
+
+# SMPL 24-joint kinematic tree.
+SMPL_PARENTS = (
+    -1, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 9, 9, 12, 13, 14, 16, 17, 18, 19,
+    20, 21,
+)
+
+JOINT_COUNT = len(SMPL_PARENTS)
+FEATURE_DIM = JOINT_COUNT * 3
 
 
 def yaw_rotation(yaw: float, *, dtype=np.float32) -> np.ndarray:
@@ -19,6 +35,21 @@ def yaw_rotation(yaw: float, *, dtype=np.float32) -> np.ndarray:
         [[cosine, -sine, 0.0], [sine, cosine, 0.0], [0.0, 0.0, 1.0]],
         dtype=dtype,
     )
+
+
+def anchor_local(points_world, anchor_position, anchor_yaw):
+    """
+    Transform world-space points (..., 3) into the anchor's local frame.
+
+    Works for a single point or a whole `[T, joints, 3]` array -- NumPy
+    broadcasts `(..., 3) @ (3, 3)` over any leading shape, no reshape
+    needed. The rotation matches `points_world`'s dtype, so float64
+    accumulation (e.g. normalization statistics) isn't silently downcast.
+    """
+
+    points_world = np.asarray(points_world)
+    rotation = yaw_rotation(float(anchor_yaw), dtype=points_world.dtype)
+    return (points_world - anchor_position) @ rotation.T
 
 
 def transform_points(points: torch.Tensor, transform: torch.Tensor) -> torch.Tensor:
@@ -69,19 +100,23 @@ def facing_yaw(joints: torch.Tensor, fallback: torch.Tensor | None = None) -> to
     return torch.where(length > 1e-6, yaw, fallback)
 
 
-def pad_history(normalized, history_size: int, feature_dim: int):
+def pad_frames(normalized, length: int, feature_dim: int, *, align: str = "right"):
     """
-    Right-align normalized history frames and mask the unused leading slots.
+    Fixed-length buffer with real content at one end, padding at the other.
 
-    Shared by training and rollout so the padding side and the mask polarity
-    (True marks a slot the attention must ignore) cannot drift between the two.
-    Returns unbatched `[history_size, feature_dim]` and `[history_size]`.
+    `align="right"` (history convention): real content trails, padding leads.
+    `align="left"` (target convention): real content leads, padding trails.
+    Mask polarity is unchanged: True marks a slot attention must ignore.
     """
 
-    length = len(normalized)
-    history = torch.zeros(history_size, feature_dim, dtype=torch.float32)
-    mask = torch.ones(history_size, dtype=torch.bool)
-    if length:
-        history[-length:] = torch.as_tensor(normalized, dtype=torch.float32)
-        mask[-length:] = False
-    return history, mask
+    actual = len(normalized)
+    buffer = torch.zeros(length, feature_dim, dtype=torch.float32)
+    mask = torch.ones(length, dtype=torch.bool)
+    if actual:
+        if align == "right":
+            buffer[-actual:] = torch.as_tensor(normalized, dtype=torch.float32)
+            mask[-actual:] = False
+        else:
+            buffer[:actual] = torch.as_tensor(normalized, dtype=torch.float32)
+            mask[:actual] = False
+    return buffer, mask

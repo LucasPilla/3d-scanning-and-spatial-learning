@@ -22,14 +22,16 @@ from src.config import (
 from src.utils.checkpoint import load_checkpoint, save_checkpoint
 
 
-def train(config, device=None) -> None:
+def train(config) -> None:
     """
     Train all valid annotations once per epoch and save resumable checkpoints.
     """
 
     if config.name is None:
         raise ValueError("Set name in the configuration or pass --name")
-    device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
+    if not torch.cuda.is_available():
+        raise RuntimeError("Training requires a CUDA device.")
+    device = torch.device("cuda")
     run = config.output / config.name
     run.mkdir(parents=True, exist_ok=True)
     save_config(config, run / "config.yaml")
@@ -64,6 +66,10 @@ def train(config, device=None) -> None:
         start_epoch = load_checkpoint(
             model, config.resume_checkpoint, optimizer, train=True, map_location="cpu"
         )
+        # Resuming restores the optimizer's old lr per param_group too, so
+        # reapply config.learning_rate here or --learning-rate silently no-ops.
+        for group in optimizer.param_groups:
+            group["lr"] = config.learning_rate
 
     diffusion = build_diffusion(config, model)
     writer = SummaryWriter(run / "tensorboard")
@@ -75,31 +81,36 @@ def train(config, device=None) -> None:
                 motion = batch["motion"].to(device)
                 history = batch["history"].to(device)
                 history_mask = batch["history_mask"].to(device)
-                bone_offsets = batch["bone_offsets"].to(device)
+                target_mask = batch["target_mask"].to(device)
                 scene = batch.get("scene")
                 text_features = batch.get("text_features")
                 goal = batch.get("goal")
+                window_progress = batch.get("window_progress")
                 if scene is not None:
                     scene = scene.to(device)
                 if text_features is not None:
                     text_features = text_features.to(device)
                 if goal is not None:
                     goal = goal.to(device)
+                if window_progress is not None:
+                    window_progress = window_progress.to(device)
                 timesteps = torch.randint(
                     diffusion.timesteps, (len(motion),), device=device
                 )
                 optimizer.zero_grad(set_to_none=True)
-                losses = diffusion.training_loss(
-                    motion,
-                    timesteps,
-                    history,
-                    history_mask,
-                    bone_offsets=bone_offsets,
-                    text=batch.get("text"),
-                    text_features=text_features,
-                    scene=scene,
-                    goal=goal,
-                )
+                with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                    losses = diffusion.training_loss(
+                        motion,
+                        timesteps,
+                        history,
+                        history_mask,
+                        text=batch.get("text"),
+                        text_features=text_features,
+                        scene=scene,
+                        goal=goal,
+                        window_progress=window_progress,
+                        target_mask=target_mask,
+                    )
                 losses["total"].backward()
                 optimizer.step()
 
@@ -112,7 +123,6 @@ def train(config, device=None) -> None:
                     f"train/{name}", value.item() / len(loader), epoch
                 )
 
-            # Validation loss on every epoch
             model.eval()
             val_totals: dict[str, float] = {}
             with torch.no_grad():
@@ -120,30 +130,35 @@ def train(config, device=None) -> None:
                     motion = batch["motion"].to(device)
                     history = batch["history"].to(device)
                     history_mask = batch["history_mask"].to(device)
-                    bone_offsets = batch["bone_offsets"].to(device)
+                    target_mask = batch["target_mask"].to(device)
                     scene = batch.get("scene")
                     text_features = batch.get("text_features")
                     goal = batch.get("goal")
+                    window_progress = batch.get("window_progress")
                     if scene is not None:
                         scene = scene.to(device)
                     if text_features is not None:
                         text_features = text_features.to(device)
                     if goal is not None:
                         goal = goal.to(device)
+                    if window_progress is not None:
+                        window_progress = window_progress.to(device)
                     timesteps = torch.randint(
                         diffusion.timesteps, (len(motion),), device=device
                     )
-                    losses = diffusion.training_loss(
-                        motion,
-                        timesteps,
-                        history,
-                        history_mask,
-                        bone_offsets=bone_offsets,
-                        text=batch.get("text"),
-                        text_features=text_features,
-                        scene=scene,
-                        goal=goal,
-                    )
+                    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                        losses = diffusion.training_loss(
+                            motion,
+                            timesteps,
+                            history,
+                            history_mask,
+                            text=batch.get("text"),
+                            text_features=text_features,
+                            scene=scene,
+                            goal=goal,
+                            window_progress=window_progress,
+                            target_mask=target_mask,
+                        )
                     for name, value in losses.items():
                         value = value.detach()
                         val_totals[name] = val_totals.get(name, 0.0) + value
@@ -173,16 +188,16 @@ def main() -> None:
     parser.add_argument("--name")
     parser.add_argument("--resume-checkpoint", type=Path)
     parser.add_argument("--workers", type=int)
-    parser.add_argument("--device")
+    parser.add_argument("--learning-rate", type=float)
     args = parser.parse_args()
     config = load_config(args.config)
-    for name in ("name", "workers"):
+    for name in ("name", "workers", "learning_rate"):
         value = getattr(args, name)
         if value is not None:
             setattr(config, name, value)
     if args.resume_checkpoint is not None:
         config.resume_checkpoint = args.resume_checkpoint.expanduser().resolve()
-    train(config, device=args.device)
+    train(config)
 
 
 if __name__ == "__main__":
