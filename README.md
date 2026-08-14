@@ -71,45 +71,6 @@ python -m demo.demo \
   --checkpoint runs/main_run/checkpoints/main_run_epoch300.pth
 ```
 
-## Evaluation
-
-Roll out every held-out test-split segment autoregressively -- window 1
-conditioned on that annotation's own history, scene, text, and goal, every
-window after it conditioned on the model's own prior generation -- and save
-it alongside ground truth:
-
-```bash
-python -m src.evaluation.test \
-  --config runs/main_run/config.yaml \
-  --checkpoint runs/main_run/checkpoints/main_run_epoch300.pth \
-  --output runs/main_run/test_results.npz
-```
-
-Then browse the rolled-out segments against ground truth in a local viewer,
-playing each segment continuously (not window by window), overlaid on real
-per-object scene geometry near its anchor by pointing `--raw-scenes` at the
-raw Nymeria download:
-
-```bash
-python -m src.evaluation.visualize_categories \
-  --results runs/main_run/test_results.npz \
-  --raw-scenes /path/to/nymeria_dataset/download
-```
-
-Prints the local URL to open (`--port`, default `8002`).
-
-Score every test-split segment with a full autoregressive rollout (each
-window after the first conditioned on the model's own prior generation, not
-ground truth), reporting collision rate, floor-contact distance, and
-goal-reaching error against a ground-truth baseline:
-
-```bash
-python -m src.evaluation.eval \
-  --config runs/main_run/config.yaml \
-  --checkpoint runs/main_run/checkpoints/main_run_epoch300.pth \
-  --output runs/main_run/eval_results.npz
-```
-
 ## Directory Structure
 
 ```text
@@ -124,12 +85,6 @@ nymeria_plus_motion/
     ├── config.py             # Configuration loader
     ├── inference.py          # Auto-regressive rollout state & generation engine
     ├── train.py              # Model training script
-    ├── evaluation/            # Test-split generation & browser viewers
-    │   ├── test.py            # Full-split autoregressive rollout script
-    │   ├── test_categories.py # Hand-picked category-segment rollout script
-    │   ├── eval.py             # Collision/floor-contact/goal-reaching rollout metrics
-    │   ├── visualize_categories.py # Ragged, per-segment rollout browser viewer
-    │   └── assets/            # Browser viewer pages for the scripts above
     ├── datasets/             # Dataset implementations (Nymeria Plus)
     ├── models/               # Model architectures (Transformer, Encoders)
     └── utils/                # Geometry, scene, and statistics helpers
