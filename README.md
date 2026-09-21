@@ -2,7 +2,7 @@
 
 [**Paper**](docs/paper/main.pdf) &nbsp;|&nbsp; [**Project Page**](https://lucaspilla.github.io/3d-scanning-and-spatial-learning/) &nbsp;|&nbsp; [**Slides**](docs/slides.pdf)
 
-<p align="center"><img src="assets/teaser.jpg" width="480" alt="Teaser"></p>
+![Teaser](assets/teaser.jpg)
 
 A diffusion model for generating human motion conditioned jointly on text, scene, and trajectory. Text,
 scene, and goal are represented as tokens concatenated onto the motion
