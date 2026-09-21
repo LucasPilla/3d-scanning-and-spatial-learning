@@ -11,3 +11,12 @@ runs/
 
 # Scratch visualizers and the pages they render.
 tmp/
+
+# LaTeX build artifacts (docs/paper/main.pdf is committed; these regenerate).
+docs/paper/*.aux
+docs/paper/*.bbl
+docs/paper/*.blg
+docs/paper/*.brf
+docs/paper/*.log
+docs/paper/*.out
+docs/paper/*.synctex.gz

@@ -1,34 +1,33 @@
-# Human Motion Generation from Text, Scene and Trajectory
+# Human Motion Generation from Text, Scene, and Trajectory on NymeriaPlus
 
-Autoregressive rollouts on held-out test-split segments, conditioned on text, scene, and goal:
+[**Paper**](docs/paper/main.pdf) &nbsp;|&nbsp; [**Project Page**](https://lucaspilla.github.io/3d-scanning-and-spatial-learning/) &nbsp;|&nbsp; [**Slides**](docs/slides.pdf)
 
-| | | |
-|---|---|---|
-| ![Cooking](./docs/assets/gifs/cooking.gif) | ![Fridge](./docs/assets/gifs/fridge.gif) | ![Laying Down](./docs/assets/gifs/laying_down.gif) |
-| Cooking | Fridge | Laying Down |
-| ![Sitting](./docs/assets/gifs/sitting.gif) | ![Stairs](./docs/assets/gifs/stairs.gif) | ![Walking](./docs/assets/gifs/walking.gif) |
-| Sitting | Stairs | Walking |
+![Teaser](assets/teaser.jpg)
 
-Ablations on a synthetic scene, varying the classifier-free guidance scale of each condition from 0.0 to 3.0 in isolation:
+A diffusion model for generating human motion conditioned jointly on
+natural-language text, 3D scene geometry, and a trajectory goal. Text,
+scene, and goal are represented as tokens concatenated onto the motion
+sequence and processed by a single shared self-attention transformer,
+with independent classifier-free-guidance dropout per condition so any
+subset of text, scene, and goal can be supplied, omitted, or guided at
+its own strength at inference time. Trained on NymeriaPlus, a
+large-scale dataset of real-world egocentric motion capture with paired
+scene geometry and text annotations.
 
-| | |
-|---|---|
-| ![Text Ablation](./docs/assets/gifs/synthetic_text_ablation.gif) | ![Goal Ablation](./docs/assets/gifs/synthetic_goal_ablation.gif) |
-| Text Ablation | Goal Ablation |
-| ![Scene Ablation](./docs/assets/gifs/synthetic_scene_ablation.gif) | ![No-Obstacle Scene Ablation](./docs/assets/gifs/synthetic_noobstacle_scene_ablation.gif) |
-| Scene Ablation | No-Obstacle Scene Ablation |
+See the [paper](docs/paper/main.pdf) for the full method and discussion.
 
 ## Setup
 
 ```bash
-git clone <repository-url>
-cd nymeria_plus_motion
+git clone https://github.com/LucasPilla/3d-scanning-and-spatial-learning.git
+cd 3d-scanning-and-spatial-learning
 pip install -e ".[download,preprocess]"
 ```
 
 ## Data Preparation
 
-To download and preprocess the dataset (requires SMPL models):
+Requires SMPL models.
+
 ```bash
 # 1. Download
 python -m src.datasets.nymeriaplus.download \
@@ -56,11 +55,10 @@ done
 python -m src.train --config configs/default.yaml --name main_run --workers 4
 ```
 
-## Tests
+## Evaluation
 
 ```bash
-# Overfit on a single batch to test the pipeline
-python -m src.train --config configs/overfit_test.yaml --name overfit_run
+python -m src.test --config runs/main_run/config.yaml --checkpoint runs/main_run/checkpoints/main_run_epoch300.pth
 ```
 
 ## Demo
@@ -74,18 +72,31 @@ python -m demo.demo \
 ## Directory Structure
 
 ```text
-nymeria_plus_motion/
-├── configs/                  # Yaml configuration files
-├── demo/                     # Interactive demo tool & visualizer
-├── docs/                     # Detailed technical and dataset documentation
-├── pyproject.toml            # Project dependencies and packaging setup
-├── README.md                 # Project guide (this file)
-└── src/                      # Source package
-    ├── cache.py              # Text feature pre-caching script
-    ├── config.py             # Configuration loader
-    ├── inference.py          # Auto-regressive rollout state & generation engine
-    ├── train.py              # Model training script
-    ├── datasets/             # Dataset implementations (Nymeria Plus)
-    ├── models/               # Model architectures (Transformer, Encoders)
-    └── utils/                # Geometry, scene, and statistics helpers
+.
+├── assets/     # README teaser image
+├── configs/    # YAML configuration files
+├── demo/       # Interactive demo tool & visualizer
+├── docs/       # Paper source/PDF, slides
+├── legacy/     # Compatibility shim for pre-token-redesign (v1) checkpoints
+└── src/        # Source package
+    ├── cache.py       # Text feature pre-caching
+    ├── config.py      # Configuration loader
+    ├── inference.py   # Autoregressive rollout state & generation engine
+    ├── train.py       # Training script
+    ├── test.py        # Test-set evaluation script
+    ├── datasets/      # NymeriaPlus dataset implementation
+    ├── models/        # Transformer denoiser & condition encoders
+    └── utils/         # Geometry, scene, and statistics helpers
+```
+
+## Citation
+
+```bibtex
+@misc{pimentel2026humanmotion,
+  author = {Pimentel, Lucas Pilla},
+  title  = {Human Motion Generation from Text, Scene, and Trajectory on NymeriaPlus},
+  year   = {2026},
+  note   = {Technical University of Munich},
+  url    = {https://github.com/LucasPilla/3d-scanning-and-spatial-learning}
+}
 ```
