@@ -13,8 +13,6 @@ its own strength at inference time. Trained on NymeriaPlus, a
 large-scale dataset of real-world egocentric motion capture with paired
 scene geometry and text annotations.
 
-See the [paper](docs/paper/main.pdf) for the full method and discussion.
-
 ## Setup
 
 ```bash
