@@ -130,13 +130,6 @@
   @media (max-width: 720px) {
     .ablation-row { grid-template-columns: 1fr; }
   }
-  .ablation-row h3 {
-    grid-column: 1 / -1;
-    font-size: 0.95rem;
-    font-weight: 700;
-    margin: 6px 0 -6px;
-    color: var(--ink-soft);
-  }
 
   .compare-row {
     display: grid;
@@ -184,17 +177,11 @@
 
   <section id="demo">
     <h2>Interactive Demo</h2>
-    <p class="lead">
-      Rollouts in this project were produced with an interactive front-end
-      that lets a user place a start position and a sequence of text- and
-      waypoint-annotated segments directly on the scene geometry, with each
-      condition&rsquo;s guidance scale exposed as an adjustable control.
-    </p>
     <video class="demo-video" src="assets/video/demo.mp4" controls preload="metadata"></video>
   </section>
 
   <section id="teaser">
-    <h2>Rollouts</h2>
+    <h2>Samples</h2>
     <p class="lead">Autoregressive rollouts on held-out test-split segments, conditioned jointly on text, scene, and goal.</p>
     <div class="grid">
       <figure>
@@ -256,10 +243,6 @@
       <img src="assets/img/architecture.png" alt="Diffusion transformer architecture">
       <figcaption>Motion, text, scene, and goal all enter one transformer as tokens in a single shared self-attention sequence; the diffusion timestep modulates every block via AdaLN-Zero instead of occupying a token.</figcaption>
     </figure>
-    <figure class="method-figure">
-      <img src="assets/img/scene_encoder.png" alt="Scene encoder pipeline">
-      <figcaption>The scene occupancy crop around the anchor is encoded by a 3D CNN down to a fixed 4&times;4&times;4 volume, giving 64 scene tokens with real 3D positional encoding.</figcaption>
-    </figure>
   </section>
 
   <section id="ablation">
@@ -271,16 +254,18 @@
       obstacle; increasing goal guidance pulls the endpoint toward the marked waypoints.
     </p>
     <div class="ablation-row">
-      <h3>Text guidance scale (arm-raise instruction)</h3>
-      <figure><video src="assets/video/synthetic_text_ablation.mp4" autoplay loop muted playsinline preload="metadata"></video></figure>
-    </div>
-    <div class="ablation-row">
-      <h3>Scene guidance scale (obstacle avoidance)</h3>
-      <figure><video src="assets/video/synthetic_scene_ablation.mp4" autoplay loop muted playsinline preload="metadata"></video></figure>
-    </div>
-    <div class="ablation-row">
-      <h3>Goal guidance scale (waypoint following)</h3>
-      <figure><video src="assets/video/synthetic_goal_ablation.mp4" autoplay loop muted playsinline preload="metadata"></video></figure>
+      <figure>
+        <video src="assets/video/synthetic_text_ablation.mp4" autoplay loop muted playsinline preload="metadata"></video>
+        <figcaption>Text guidance scale (arm-raise instruction)</figcaption>
+      </figure>
+      <figure>
+        <video src="assets/video/synthetic_scene_ablation.mp4" autoplay loop muted playsinline preload="metadata"></video>
+        <figcaption>Scene guidance scale (obstacle avoidance)</figcaption>
+      </figure>
+      <figure>
+        <video src="assets/video/synthetic_goal_ablation.mp4" autoplay loop muted playsinline preload="metadata"></video>
+        <figcaption>Goal guidance scale (waypoint following)</figcaption>
+      </figure>
     </div>
 
     <h3 style="font-size:0.95rem;color:var(--ink-soft);margin-bottom:12px;">With vs. without the obstacle</h3>
