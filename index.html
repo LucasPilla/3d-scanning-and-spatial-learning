@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Human Motion Generation from Text, Scene, and Trajectory</title>
+<meta name="description" content="A diffusion model for generating human motion conditioned jointly on text, 3D scene geometry, and a trajectory goal.">
+<style>
+  :root {
+    --ink: #1a1a1a;
+    --ink-soft: #4a4a4a;
+    --ink-mute: #767676;
+    --line: #e4e4e4;
+    --bg: #ffffff;
+    --bg-soft: #f7f7f6;
+    --accent: #2a5db0;
+    --accent-soft: #eef3fb;
+    --max-w: 900px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+    font-size: 17px;
+  }
+  .wrap { max-width: var(--max-w); margin: 0 auto; padding: 0 24px; }
+
+  header.hero {
+    padding: 72px 0 40px;
+    text-align: center;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 48px;
+  }
+  header.hero h1 {
+    font-size: clamp(1.6rem, 3.2vw, 2.3rem);
+    line-height: 1.25;
+    margin: 0 0 22px;
+    font-weight: 700;
+  }
+  .authors { font-size: 1.05rem; color: var(--ink-soft); margin-bottom: 6px; }
+  .affil { font-size: 0.95rem; color: var(--ink-mute); margin-bottom: 28px; }
+  .links { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .links a {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 18px;
+    border-radius: 999px;
+    background: var(--ink);
+    color: #fff;
+    text-decoration: none;
+    font-size: 0.92rem;
+    font-weight: 600;
+    transition: opacity .15s ease;
+  }
+  .links a.secondary {
+    background: var(--bg);
+    color: var(--ink);
+    border: 1px solid var(--line);
+  }
+  .links a:hover { opacity: 0.82; }
+
+  section { margin: 0 0 56px; }
+  h2 {
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin: 0 0 18px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--ink);
+    display: inline-block;
+  }
+  p.lead { color: var(--ink-soft); }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+  }
+  @media (max-width: 720px) {
+    .grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  figure { margin: 0; }
+  figure video, figure img {
+    width: 100%;
+    display: block;
+    border-radius: 8px;
+    background: var(--bg-soft);
+    border: 1px solid var(--line);
+  }
+  figcaption {
+    margin-top: 8px;
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+    font-style: italic;
+    text-align: center;
+  }
+
+  .method-figure { margin-bottom: 28px; }
+  .method-figure img {
+    width: 100%;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--bg-soft);
+  }
+  .method-figure figcaption {
+    font-style: normal;
+    text-align: left;
+    margin-top: 10px;
+    font-size: 0.92rem;
+  }
+
+  .ablation-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+    margin-bottom: 22px;
+  }
+  @media (max-width: 720px) {
+    .ablation-row { grid-template-columns: 1fr; }
+  }
+  .ablation-row h3 {
+    grid-column: 1 / -1;
+    font-size: 0.95rem;
+    font-weight: 700;
+    margin: 6px 0 -6px;
+    color: var(--ink-soft);
+  }
+
+  .compare-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+  }
+  @media (max-width: 560px) {
+    .compare-row { grid-template-columns: 1fr; }
+  }
+
+  pre {
+    background: var(--bg-soft);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 18px 20px;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    line-height: 1.55;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+  footer {
+    text-align: center;
+    padding: 32px 0 64px;
+    color: var(--ink-mute);
+    font-size: 0.85rem;
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <h1>Human Motion Generation from Text, Scene, and Trajectory</h1>
+    <div class="authors">Lucas Pilla Pimentel</div>
+    <div class="affil">Technical University of Munich</div>
+    <div class="links">
+      <a href="assets/paper.pdf">Paper (PDF)</a>
+      <a class="secondary" href="https://github.com/LucasPilla/3d-scanning-and-spatial-learning">Code</a>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section id="teaser">
+    <h2>Rollouts</h2>
+    <p class="lead">Autoregressive rollouts on held-out test-split segments, conditioned jointly on text, scene, and goal.</p>
+    <div class="grid">
+      <figure>
+        <video src="assets/video/cooking.mp4" autoplay loop muted playsinline preload="metadata"></video>
+        <figcaption>&ldquo;The person walks to the counter and stirs the food with the right hand.&rdquo;</figcaption>
+      </figure>
+      <figure>
+        <video src="assets/video/fridge.mp4" autoplay loop muted playsinline preload="metadata"></video>
+        <figcaption>&ldquo;The person walks to the fridge and opens it with both hands.&rdquo;</figcaption>
+      </figure>
+      <figure>
+        <video src="assets/video/laying_down.mp4" autoplay loop muted playsinline preload="metadata"></video>
+        <figcaption>&ldquo;The person is lying down on the bed.&rdquo;</figcaption>
+      </figure>
+      <figure>
+        <video src="assets/video/sitting.mp4" autoplay loop muted playsinline preload="metadata"></video>
+        <figcaption>&ldquo;The person is sitting on the sofa.&rdquo;</figcaption>
+      </figure>
+      <figure>
+        <video src="assets/video/stairs.mp4" autoplay loop muted playsinline preload="metadata"></video>
+        <figcaption>&ldquo;The person is walking up stairs.&rdquo;</figcaption>
+      </figure>
+      <figure>
+        <video src="assets/video/walking.mp4" autoplay loop muted playsinline preload="metadata"></video>
+        <figcaption>&ldquo;The person is walking forward.&rdquo;</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="abstract">
+    <h2>Abstract</h2>
+    <p class="lead">
+      We present a diffusion model for generating human motion conditioned jointly
+      on natural-language text, 3D scene geometry, and a target trajectory goal.
+      Rather than routing each condition through its own cross-attention path, we
+      represent text, scene, and goal as tokens that are concatenated onto the
+      motion sequence and processed by a single shared self-attention transformer,
+      with the diffusion timestep injected via AdaLN-Zero. Each condition is
+      trained with independent classifier-free-guidance dropout, so at sampling
+      time any subset of text, scene, and goal can be supplied, omitted, or
+      guided at its own strength. We train on NymeriaPlus, a large-scale dataset
+      of real-world egocentric motion capture with paired scene geometry and text
+      annotations, using a floor-anchored joint-position motion representation.
+      An earlier iteration of this idea anchored the local coordinate frame on the
+      raw pelvis position and hard-inpainted the goal into the generated window;
+      we found this broke scene and goal conditioning whenever pose changed the
+      pelvis&rsquo;s height above the floor, and describe the representation
+      changes &ndash; anchoring on estimated floor height instead, and treating
+      the goal as a soft, CFG-guided token like text and scene &ndash; that fixed
+      it. We report qualitative rollouts on held-out test sequences spanning
+      locomotion and everyday scene interactions such as cooking, using a fridge,
+      sitting, and lying down, and leave a quantitative evaluation to future work.
+    </p>
+  </section>
+
+  <section id="method">
+    <h2>Method</h2>
+    <figure class="method-figure">
+      <img src="assets/img/architecture.png" alt="Diffusion transformer architecture">
+      <figcaption>Motion, text, scene, and goal all enter one transformer as tokens in a single shared self-attention sequence; the diffusion timestep modulates every block via AdaLN-Zero instead of occupying a token.</figcaption>
+    </figure>
+    <figure class="method-figure">
+      <img src="assets/img/scene_encoder.png" alt="Scene encoder pipeline">
+      <figcaption>The scene occupancy crop around the anchor is encoded by a 3D CNN down to a fixed 4&times;4&times;4 volume, giving 64 scene tokens with real 3D positional encoding.</figcaption>
+    </figure>
+  </section>
+
+  <section id="ablation">
+    <h2>Guidance-Scale Ablation</h2>
+    <p class="lead">
+      Sweeping one condition&rsquo;s classifier-free guidance scale from 0 to 3, with the
+      other two held fixed, on a synthetic scene. Increasing text guidance sharpens the
+      described arm motion; increasing scene guidance pulls the trajectory away from the
+      obstacle; increasing goal guidance pulls the endpoint toward the marked waypoints.
+    </p>
+    <div class="ablation-row">
+      <h3>Text guidance scale (arm-raise instruction)</h3>
+      <figure><video src="assets/video/synthetic_text_ablation.mp4" autoplay loop muted playsinline preload="metadata"></video></figure>
+    </div>
+    <div class="ablation-row">
+      <h3>Scene guidance scale (obstacle avoidance)</h3>
+      <figure><video src="assets/video/synthetic_scene_ablation.mp4" autoplay loop muted playsinline preload="metadata"></video></figure>
+    </div>
+    <div class="ablation-row">
+      <h3>Goal guidance scale (waypoint following)</h3>
+      <figure><video src="assets/video/synthetic_goal_ablation.mp4" autoplay loop muted playsinline preload="metadata"></video></figure>
+    </div>
+
+    <h3 style="font-size:0.95rem;color:var(--ink-soft);margin-bottom:12px;">With vs. without the obstacle</h3>
+    <div class="compare-row">
+      <figure>
+        <video src="assets/video/synthetic_scene_ablation.mp4" autoplay loop muted playsinline preload="metadata"></video>
+        <figcaption>With obstacle</figcaption>
+      </figure>
+      <figure>
+        <video src="assets/video/synthetic_noobstacle_scene_ablation.mp4" autoplay loop muted playsinline preload="metadata"></video>
+        <figcaption>Without obstacle</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="bibtex">
+    <h2>BibTeX</h2>
+    <pre><code>@misc{pimentel2026humanmotion,
+  author = {Pimentel, Lucas Pilla},
+  title  = {Human Motion Generation from Text, Scene, and Trajectory},
+  year   = {2026},
+  note   = {Technical University of Munich},
+  url    = {https://github.com/LucasPilla/3d-scanning-and-spatial-learning}
+}</code></pre>
+  </section>
+
+</div>
+
+<footer>
+  Trained on <a href="https://github.com/LucasPilla/3d-scanning-and-spatial-learning" style="color:inherit;">NymeriaPlus</a>.
+</footer>
+
+</body>
+</html>
