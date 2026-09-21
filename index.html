@@ -99,6 +99,14 @@
     text-align: center;
   }
 
+  .demo-video {
+    width: 100%;
+    display: block;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: #000;
+  }
+
   .method-figure { margin-bottom: 28px; }
   .method-figure img {
     width: 100%;
@@ -173,6 +181,17 @@
 </header>
 
 <div class="wrap">
+
+  <section id="demo">
+    <h2>Interactive Demo</h2>
+    <p class="lead">
+      Rollouts in this project were produced with an interactive front-end
+      that lets a user place a start position and a sequence of text- and
+      waypoint-annotated segments directly on the scene geometry, with each
+      condition&rsquo;s guidance scale exposed as an adjustable control.
+    </p>
+    <video class="demo-video" src="assets/video/demo.mp4" controls preload="metadata"></video>
+  </section>
 
   <section id="teaser">
     <h2>Rollouts</h2>
