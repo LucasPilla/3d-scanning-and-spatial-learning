@@ -1,6 +1,6 @@
 # Human Motion Generation from Text, Scene, and Trajectory on NymeriaPlus
 
-[**Paper**](docs/paper/main.pdf) &nbsp;|&nbsp; [**Project Page**](https://lucaspilla.github.io/3d-scanning-and-spatial-learning/) &nbsp;|&nbsp; [**Slides**](docs/slides.pdf)
+[**Paper**](docs/paper/main.pdf) &nbsp;|&nbsp; [**Project Page**](https://lucaspilla.github.io/3d-scanning-and-spatial-learning/)
 
 ![Teaser](assets/teaser.jpg)
 
