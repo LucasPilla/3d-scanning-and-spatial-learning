@@ -4,15 +4,6 @@
 
 ![Teaser](assets/teaser.jpg)
 
-A diffusion model for generating human motion conditioned jointly on text, scene, and trajectory. Text,
-scene, and goal are represented as tokens concatenated onto the motion
-sequence and processed by a single shared self-attention transformer,
-with independent classifier-free-guidance dropout per condition so any
-subset of text, scene, and goal can be supplied, omitted, or guided at
-its own strength at inference time. Trained on NymeriaPlus, a
-large-scale dataset of real-world egocentric motion capture with paired
-scene geometry and text annotations.
-
 ## Setup
 
 ```bash
