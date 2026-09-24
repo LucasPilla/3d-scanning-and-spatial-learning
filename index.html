@@ -75,7 +75,7 @@
     border-bottom: 2px solid var(--ink);
     display: inline-block;
   }
-  p.lead { color: var(--ink-soft); }
+  p.lead { color: var(--ink-soft); text-align: justify; hyphens: auto; }
 
   .grid {
     display: grid;
@@ -115,12 +115,6 @@
     border-radius: 8px;
     border: 1px solid var(--line);
     background: var(--bg-soft);
-  }
-  .method-figure figcaption {
-    font-style: normal;
-    text-align: left;
-    margin-top: 10px;
-    font-size: 0.92rem;
   }
 
   .ablation-row {
@@ -227,9 +221,24 @@
 
   <section id="method">
     <h2>Method</h2>
+    <p class="lead">
+      Following MDM, we use a transformer denoiser that predicts clean motion
+      directly from a noised window of 3D joint positions. Each window is expressed
+      in a local frame centered below the pelvis on the floor and aligned with the
+      body&rsquo;s facing direction. Text, scene, and goal are each turned into tokens
+      and concatenated onto the motion tokens, so a single self-attention layer per
+      block reasons over motion and all conditions jointly. The text is encoded with a
+      frozen T5 encoder and kept as a sequence of per-token embeddings, the scene is a
+      voxelized occupancy crop around the body encoded by a small 3D CNN into 64
+      tokens with 3D positional encodings, and the goal is the target pelvis position
+      at the end of the window. Each condition is dropped independently during
+      training, so at sampling time every condition has its own classifier-free
+      guidance scale. Long motions are generated autoregressively: the last frames of
+      each window become the history of the next, and the local frame is recentered
+      on the body before every window.
+    </p>
     <figure class="method-figure">
       <img src="assets/img/architecture.png" alt="Diffusion transformer architecture">
-      <figcaption>Architecture overview. Motion, text, scene, and goal tokens are concatenated into one sequence and processed by a single transformer denoiser.</figcaption>
     </figure>
   </section>
 
