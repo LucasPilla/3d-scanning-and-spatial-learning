@@ -238,17 +238,21 @@
     <h2>Method</h2>
     <figure class="method-figure">
       <img src="assets/img/architecture.png" alt="Diffusion transformer architecture">
-      <figcaption>Motion, text, scene, and goal all enter one transformer as tokens in a single shared self-attention sequence; the diffusion timestep modulates every block via AdaLN-Zero instead of occupying a token.</figcaption>
+      <figcaption>Architecture overview. Motion, text, scene, and goal tokens are concatenated into one sequence and processed by a single transformer denoiser.</figcaption>
     </figure>
   </section>
 
   <section id="ablation">
-    <h2>Guidance-Scale Ablation</h2>
+    <h2>CFG Ablation</h2>
     <p class="lead">
-      Sweeping one condition&rsquo;s classifier-free guidance scale from 0 to 3, with the
-      other two held fixed, on a synthetic scene. Increasing text guidance sharpens the
-      described arm motion; increasing scene guidance pulls the trajectory away from the
-      obstacle; increasing goal guidance pulls the endpoint toward the marked waypoints.
+      We generate a two-segment rollout in a simple synthetic scene with a single
+      box-shaped obstacle (&ldquo;The person walks forward and raises their right
+      hand.&rdquo; then &ldquo;The person lowers their right hand and raises their left
+      hand.&rdquo;) and sweep the guidance scale of one condition from 0 to 3 while
+      keeping the other two fixed at 1. Increasing the text guidance makes the described
+      arm raises more pronounced, increasing the scene guidance keeps the trajectory
+      clear of the obstacle, and increasing the goal guidance moves the rollout further
+      toward the waypoints.
     </p>
     <div class="ablation-row">
       <figure>
@@ -262,18 +266,6 @@
       <figure>
         <video src="assets/video/synthetic_goal_ablation.mp4" autoplay loop muted playsinline preload="metadata"></video>
         <figcaption>Goal guidance scale (waypoint following)</figcaption>
-      </figure>
-    </div>
-
-    <h3 style="font-size:0.95rem;color:var(--ink-soft);margin-bottom:12px;">With vs. without the obstacle</h3>
-    <div class="compare-row">
-      <figure>
-        <video src="assets/video/synthetic_scene_ablation.mp4" autoplay loop muted playsinline preload="metadata"></video>
-        <figcaption>With obstacle</figcaption>
-      </figure>
-      <figure>
-        <video src="assets/video/synthetic_noobstacle_scene_ablation.mp4" autoplay loop muted playsinline preload="metadata"></video>
-        <figcaption>Without obstacle</figcaption>
       </figure>
     </div>
   </section>
