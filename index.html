@@ -177,6 +177,27 @@
 
 <div class="wrap">
 
+  <section id="abstract">
+    <h2>Abstract</h2>
+    <p class="lead">
+      Human motion generation conditioned jointly on text, scene, and
+      trajectory remains underexplored, largely because few real-world datasets
+      pair motion with both scene context and language annotations at scale. We
+      address this by training on NymeriaPlus, a large-scale dataset of
+      real-world egocentric motion capture with paired scene and text
+      annotations. We propose a diffusion model in which text, scene, and a goal
+      position are encoded as tokens, concatenated onto the motion sequence,
+      processed together by a single self-attention transformer, and rolled out
+      autoregressively to generate long motions. Each condition is dropped
+      independently during training in the style of classifier-free guidance,
+      so at sampling time any subset of the three can be supplied, omitted, or
+      guided at its own strength. Qualitative rollouts on held-out test
+      sequences show motion that follows the text, respects the scene, and
+      reaches the goal, and a per-condition guidance ablation shows that each
+      guidance weight controls its own condition.
+    </p>
+  </section>
+
   <section id="teaser">
     <h2>Samples</h2>
     <p class="lead">Autoregressive rollouts on held-out test-split segments, conditioned jointly on text, scene, and goal.</p>
@@ -211,32 +232,6 @@
   <section id="demo">
     <h2>Interactive Demo</h2>
     <video class="demo-video" src="assets/video/demo.mp4" controls preload="metadata"></video>
-  </section>
-
-  <section id="abstract">
-    <h2>Abstract</h2>
-    <p class="lead">
-      We present a diffusion model for generating human motion conditioned jointly
-      on natural-language text, 3D scene geometry, and a target trajectory goal.
-      Rather than routing each condition through its own cross-attention path, we
-      represent text, scene, and goal as tokens that are concatenated onto the
-      motion sequence and processed by a single shared self-attention transformer,
-      with the diffusion timestep injected via AdaLN-Zero. Each condition is
-      trained with independent classifier-free-guidance dropout, so at sampling
-      time any subset of text, scene, and goal can be supplied, omitted, or
-      guided at its own strength. We train on NymeriaPlus, a large-scale dataset
-      of real-world egocentric motion capture with paired scene geometry and text
-      annotations, using a floor-anchored joint-position motion representation.
-      An earlier iteration of this idea anchored the local coordinate frame on the
-      raw pelvis position and hard-inpainted the goal into the generated window;
-      we found this broke scene and goal conditioning whenever pose changed the
-      pelvis&rsquo;s height above the floor, and describe the representation
-      changes &ndash; anchoring on estimated floor height instead, and treating
-      the goal as a soft, CFG-guided token like text and scene &ndash; that fixed
-      it. We report qualitative rollouts on held-out test sequences spanning
-      locomotion and everyday scene interactions such as cooking, using a fridge,
-      sitting, and lying down, and leave a quantitative evaluation to future work.
-    </p>
   </section>
 
   <section id="method">
